@@ -1,0 +1,77 @@
+name: Quality checks
+
+on:
+  pull_request:
+  push:
+    branches: [main, master]
+
+permissions:
+  contents: read
+
+jobs:
+  changelog:
+    name: Require changelog entry
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Check changelog exists and has content
+        run: |
+          test -s CHANGELOG.md || { echo 'CHANGELOG.md is missing or empty.'; exit 1; }
+      - name: Require changelog update in pull requests
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+        run: |
+          git fetch origin "$BASE_REF" --depth=1
+          if ! git diff --name-only "origin/$BASE_REF...HEAD" -- CHANGELOG.md | grep -q '^CHANGELOG.md$'; then
+            echo 'Update CHANGELOG.md in every pull request.'
+            exit 1
+          fi
+
+  agent-tests:
+    name: Agent lint and tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: services/agent
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10
+        with:
+          enable-cache: true
+          cache-dependency-glob: services/agent/uv.lock
+      - name: Install dependencies
+        run: uv sync --locked
+      - name: Ensure modular test suite exists
+        run: |
+          test -n "$(find tests -type f -name 'test_*.py' -print -quit)" || {
+            echo 'No pytest cases found under services/agent/tests/.'
+            exit 1
+          }
+      - name: Lint
+        run: uv run ruff check .
+      - name: Run tests
+        env:
+          DATA_DIR: ${{ github.workspace }}/data
+        run: uv run pytest -q
+
+  frontend:
+    name: Frontend typecheck and build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: services/frontend
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: services/frontend/package-lock.json
+      - run: npm ci
+      - run: npx tsc --noEmit
+      - run: npm run build
+        env:
+          BACKEND_URL: http://localhost:8000

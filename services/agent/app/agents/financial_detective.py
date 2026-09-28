@@ -14,7 +14,7 @@ from app.agents.state import AgentState
 from app.core.llm import build_chat_model
 from app.core.telemetry import get_logger, trace_context, tracing_callbacks
 from app.domain.prompts import PromptRegistry
-from app.domain.tools import REGISTERED_TOOLS, WRITE_TOOLS, handle_tool_error
+from app.domain.tools import REGISTERED_TOOLS, handle_tool_error
 from app.exceptions import (
     AgentServiceError, ApprovalPendingError, GraphUninitializedError,
     LoopBreakerError, NoPendingApprovalError, OutputHallucinationError, ProviderModelError,
@@ -26,7 +26,7 @@ from app.guardrails.loop_guard import DUPLICATE_PREFIX, FEEDBACK_FLAG, LoopGuard
 logger = get_logger(__name__)
 
 
-class LeakageAgent(BaseAgent):
+class FinancialDetective(BaseAgent):
     MAX_VERIFY_RETRIES: int = 1
     RECURSION_LIMIT: int = 40
     NODE_TIMEOUT_SECONDS: int = 90
@@ -96,7 +96,6 @@ class LeakageAgent(BaseAgent):
             return Command(goto="tools", update=cleared)
         notes = decision.get("notes") or "no notes"
         logger.info("agent.approval.rejected", notes=notes)
-        last = state["messages"][-1]
         rejected = [
             ToolMessage(
                 content=f"Action rejected by reviewer. Notes: {notes}",
@@ -178,7 +177,7 @@ class LeakageAgent(BaseAgent):
 
     @staticmethod
     def _thread_config(session_id: str) -> Dict[str, Any]:
-        return {"configurable": {"thread_id": session_id}, "recursion_limit": LeakageAgent.RECURSION_LIMIT}
+        return {"configurable": {"thread_id": session_id}, "recursion_limit": FinancialDetective.RECURSION_LIMIT}
 
     def _require_graph(self) -> CompiledStateGraph:
         if self._compiled_graph is None:
@@ -209,7 +208,7 @@ class LeakageAgent(BaseAgent):
 
     async def _run(self, graph: CompiledStateGraph, graph_input: Any, cfg: Dict[str, Any], trace_id: str) -> AgentResult:
         session_id = cfg["configurable"]["thread_id"]
-        run_config = {**cfg, "callbacks": tracing_callbacks(), "run_name": "leakage-agent"}
+        run_config = {**cfg, "callbacks": tracing_callbacks(), "run_name": "financial-detective"}
         try:
             with trace_context(session_id, trace_id):
                 result = await graph.ainvoke(graph_input, config=run_config)
