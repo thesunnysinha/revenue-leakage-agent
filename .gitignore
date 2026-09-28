@@ -1,20 +1,45 @@
-# Ignore prompts file
+# Local prompts
 prompts.md
 
-# Env secrets
-env/agent/.env
-env/frontend/.env.local
-services/frontend/.env.local
+# Operating system files
+.DS_Store
+Thumbs.db
+
+# Local environment and secrets; keep example templates tracked
+.env
+.env.*
+!.env.example
+!.env.*.example
 
 # Python
-services/agent/.venv/
-services/agent/__pycache__/
 **/__pycache__/
-*.pyc
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.tox/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+*.egg-info/
 
-# Node
-services/frontend/node_modules/
-services/frontend/.next/
+# JavaScript dependencies and build output
+**/node_modules/
+**/.next/
+**/out/
+**/coverage/
+*.tsbuildinfo
+services/frontend/build/
+
+# Runtime logs and temporary editor files
+*.log
+npm-debug.log*
+yarn-debug.log*
+*.swp
+*~
 
 # Sandbox writes (keep .gitkeep)
 data/sandbox/*.json

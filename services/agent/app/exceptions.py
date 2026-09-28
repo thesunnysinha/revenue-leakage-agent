@@ -77,3 +77,12 @@ class NoPendingApprovalError(AgentServiceError):
             error_code="NO_PENDING_APPROVAL",
             details={"session_id": session_id},
         )
+
+
+class ChatNotFoundError(AgentServiceError):
+    def __init__(self, session_id: str) -> None:
+        super().__init__(
+            message=f"Chat '{session_id}' was not found.",
+            error_code="CHAT_NOT_FOUND",
+            details={"session_id": session_id},
+        )

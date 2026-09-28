@@ -1,7 +1,6 @@
 import { createUIMessageStream, createUIMessageStreamResponse } from "ai";
 import { randomUUID } from "crypto";
-
-const BACKEND_URL = process.env.BACKEND_URL ?? "http://localhost:8000";
+import { BACKEND_URL, backendHeaders } from "@/lib/backend";
 
 export async function POST(request: Request) {
   const body = await request.json();
@@ -9,7 +8,7 @@ export async function POST(request: Request) {
 
   const res = await fetch(`${BACKEND_URL}/api/v1/agent/chat`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: backendHeaders({ "Content-Type": "application/json" }),
     body: JSON.stringify({ query, session_id: sessionId ?? null }),
   });
 
@@ -40,6 +39,7 @@ export async function POST(request: Request) {
           requires_human_approval: Boolean(data.requires_human_approval),
           pending_approval_details: (data.pending_approval_details as Record<string, unknown>) ?? null,
           tools_executed: (data.tools_executed as string[]) ?? [],
+          tool_calls: (data.tool_calls as unknown[]) ?? [],
           latency_ms: data.latency_ms as number,
         },
       });

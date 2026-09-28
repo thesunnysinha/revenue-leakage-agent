@@ -1,0 +1,9 @@
+import { BACKEND_URL, backendHeaders } from "@/lib/backend";
+
+export async function GET() {
+  const response = await fetch(`${BACKEND_URL}/api/v1/activity`, {
+    headers: backendHeaders(),
+    cache: "no-store",
+  });
+  return Response.json(await response.json(), { status: response.status });
+}

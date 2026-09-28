@@ -41,7 +41,7 @@ sequenceDiagram
     participant NH as /api/chat Route Handler
     participant API as FastAPI
     participant AG as FinancialDetective
-    participant CP as InMemorySaver\n(checkpointer)
+    participant CP as PostgreSQL\n(AsyncPostgresSaver)
 
     U->>FE: "Apply credit memo for ACME"
     FE->>NH: POST /api/chat {query, sessionId}

@@ -41,8 +41,11 @@ def query_invoices(
     from_date / to_date are ISO date strings (YYYY-MM-DD).
     """
     invoices = get_repository().all_invoices(
-        plan_id=plan_id, customer_name=customer_name,
-        status=status, from_date=from_date, to_date=to_date,
+        plan_id=plan_id,
+        customer_name=customer_name,
+        status=status,
+        from_date=from_date,
+        to_date=to_date,
     )
     return _json([i.model_dump() for i in invoices])
 

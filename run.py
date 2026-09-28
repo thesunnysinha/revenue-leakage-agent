@@ -26,7 +26,16 @@ class CommandRunner:
 class ServiceController:
     @staticmethod
     def dev() -> None:
-        env = {**os.environ, "DATA_DIR": str(ROOT / "data")}
+        database_url = os.environ.get(
+            "DATABASE_URL",
+            "postgresql://ledgerlens:ledgerlens-local@localhost:5432/ledgerlens",
+        ).replace("@postgres:", "@localhost:")
+        env = {
+            **os.environ,
+            "DATA_DIR": str(ROOT / "data"),
+            "DATABASE_URL": database_url,
+            "LANGGRAPH_STRICT_MSGPACK": "true",
+        }
         CommandRunner.execute(["uv", "run", "python", "server.py"], cwd=AGENT, env=env)
 
     @staticmethod
@@ -39,7 +48,7 @@ class ServiceController:
             CommandRunner.execute([*COMPOSE, "up", "--build", "-d"])
             print("\n[✔] Active: http://localhost:8000/docs | Frontend: http://localhost:3000 | Jaeger: http://localhost:16686\n")
         elif action == "down":
-            CommandRunner.execute([*COMPOSE, "down", "-v"])
+            CommandRunner.execute([*COMPOSE, "down"])
         elif action == "logs":
             CommandRunner.execute([*COMPOSE, "logs", "-f", "agent-api"])
 
@@ -47,12 +56,6 @@ class ServiceController:
     def check() -> None:
         CommandRunner.execute(["uv", "run", "ruff", "check", "."], cwd=AGENT)
         CommandRunner.execute(["uv", "run", "pytest", "-q"], cwd=AGENT)
-
-    @staticmethod
-    def test(query: str) -> None:
-        env = {**os.environ, "DATA_DIR": str(ROOT / "data")}
-        CommandRunner.execute(["uv", "run", "python", "smoke_test.py", query], cwd=AGENT, env=env)
-
 
 def main() -> None:
     parser = argparse.ArgumentParser(prog="run.py", description="Revenue Leakage Agent CLI")
@@ -62,8 +65,6 @@ def main() -> None:
     subparsers.add_parser("check")
     doc = subparsers.add_parser("docker")
     doc.add_argument("action", choices=["up", "down", "logs"])
-    tst = subparsers.add_parser("test")
-    tst.add_argument("--query", "-q", default="Find revenue leakage for customer ACME Corp")
     args = parser.parse_args()
     ctl = ServiceController()
     if args.subcommand == "dev":
@@ -74,8 +75,6 @@ def main() -> None:
         ctl.check()
     elif args.subcommand == "docker":
         ctl.docker(args.action)
-    elif args.subcommand == "test":
-        ctl.test(args.query)
     else:
         parser.print_help()
 

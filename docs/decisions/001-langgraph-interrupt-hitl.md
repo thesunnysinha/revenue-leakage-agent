@@ -5,7 +5,7 @@
 
 ## Decision
 
-Use LangGraph's `interrupt()` primitive (with `InMemorySaver` checkpointer) as the HITL mechanism instead of a conversational "ask the user" pattern.
+Use LangGraph's `interrupt()` primitive with `AsyncPostgresSaver` as the HITL mechanism instead of a conversational "ask the user" pattern. `InMemorySaver` remains a test-only fallback for direct graph construction.
 
 ## Context
 
@@ -25,4 +25,4 @@ The challenge requires that sandbox writes (`apply`, `rollback`) only happen aft
 - The `/chat` endpoint may return `requires_human_approval: true` mid-session.
 - Frontend must surface an approval card and disable input until the decision is made.
 - The `/approval` endpoint resumes the paused graph thread.
-- Session state is held in-process (`InMemorySaver`). For production: swap to `AsyncPostgresSaver`.
+- Session state and suspended approval checkpoints persist in PostgreSQL across API restarts.

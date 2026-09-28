@@ -27,6 +27,8 @@ class ApplicationSettings(BaseSettings):
     log_format: Literal["auto", "console", "json"] = Field(default="auto")
 
     data_dir: Path = Field(default=Path(__file__).resolve().parents[1] / "data")
+    database_url: str = Field(default="postgresql://ledgerlens:ledgerlens@localhost:5432/ledgerlens", alias="DATABASE_URL")
+    backend_api_token: Optional[str] = Field(default=None, alias="BACKEND_API_TOKEN")
     cors_origins: List[str] = Field(default_factory=lambda: ["*"])
 
     host: str = Field(default="0.0.0.0")
@@ -40,6 +42,7 @@ class ApplicationSettings(BaseSettings):
     max_tokens: Optional[int] = Field(default=4096)
 
     otel_exporter_endpoint: Optional[str] = Field(default=None, alias="OTEL_EXPORTER_OTLP_ENDPOINT")
+    otel_exporter_headers: Optional[str] = Field(default=None, alias="OTEL_EXPORTER_OTLP_HEADERS")
     otel_service_name: str = Field(default="revenue-leakage-agent", alias="OTEL_SERVICE_NAME")
     langfuse_public_key: Optional[str] = Field(default=None, alias="LANGFUSE_PUBLIC_KEY")
     langfuse_secret_key: Optional[str] = Field(default=None, alias="LANGFUSE_SECRET_KEY")

@@ -1,4 +1,5 @@
 """Tests for BillingRepository — reads, filters, FX, sandbox writes, rollback."""
+
 from __future__ import annotations
 
 from decimal import Decimal
@@ -7,6 +8,30 @@ from app.domain.repository import BillingRepository
 
 
 class TestReads:
+    def test_billing_data_keeps_decimal_amounts_exact(self, repo: BillingRepository) -> None:
+        data = repo.billing_data()
+        assert len(data["plans"]) == 4
+        assert len(data["invoices"]) == 13
+        assert data["plans"][0]["total_value"] == "96000"
+        assert data["invoices"][0]["amount_invoiced"] == "8000"
+
+    def test_sandbox_activity_reads_audit_events(self, repo: BillingRepository) -> None:
+        activity = repo.sandbox_activity()
+        assert activity == []
+
+    def test_demo_overview_reports_fixture_counts(self, repo: BillingRepository) -> None:
+        overview = repo.demo_overview()
+        assert overview["environment"] == "test"
+        assert overview["dataset_status"] == "ready"
+        assert overview["counts"] == {
+            "plans": 4,
+            "invoices": 13,
+            "credit_memos": 1,
+            "exchange_rates": 1,
+            "sandbox_actions": 0,
+        }
+        assert {row["plan_id"] for row in overview["plans"]} == {"C-1001", "C-1007", "C-1007-A1", "C-1010"}
+
     def test_get_known_plan(self, repo: BillingRepository) -> None:
         plan = repo.get_plan("C-1001")
         assert plan is not None
