@@ -108,6 +108,7 @@ def tracing_callbacks() -> List[Any]:
     if not langfuse_enabled():
         return []
     from langfuse.langchain import CallbackHandler
+
     return [CallbackHandler(public_key=config.langfuse_public_key)]
 
 
@@ -116,12 +117,14 @@ def trace_context(session_id: str, trace_id: str) -> AbstractContextManager:
     if not langfuse_enabled():
         return nullcontext()
     from langfuse import propagate_attributes
+
     return propagate_attributes(session_id=session_id, trace_name="revops-agent", metadata={"trace_id": trace_id})
 
 
 def shutdown_tracing() -> None:
     if langfuse_enabled():
         from langfuse import get_client
+
         get_client().flush()
 
 
@@ -133,6 +136,7 @@ class TelemetryManager:
             # instrumentation is skipped in this mode to avoid duplicate spans.
             try:
                 from langfuse import Langfuse
+
                 Langfuse(
                     public_key=config.langfuse_public_key,
                     secret_key=config.langfuse_secret_key,
@@ -159,6 +163,7 @@ class TelemetryManager:
             trace.set_tracer_provider(provider)
 
             from openinference.instrumentation.langchain import LangChainInstrumentor
+
             LangChainInstrumentor().instrument()
             logger.info("telemetry.otel.enabled", endpoint=config.otel_exporter_endpoint)
         except Exception as exc:

@@ -1,4 +1,5 @@
 import styles from "./Chat.module.css";
+import type { ToolCallRecord } from "@/lib/api";
 
 function InlineMarkdown({ text }: { text: string }) {
   const tokens = text.split(/(\*\*[^*]+\*\*|\*[^*]+\*|`[^`]+`)/g);
@@ -62,17 +63,54 @@ export interface Message {
   role: "user" | "assistant";
   content: string;
   tools?: string[];
+  toolCalls?: ToolCallRecord[];
 }
 
 export default function MessageBubble({ message }: { message: Message }) {
   const isUser = message.role === "user";
+  const toolCalls = message.toolCalls?.length ? message.toolCalls : [];
+  const statusCounts = toolCalls.reduce<Record<string, number>>((counts, call) => {
+    counts[call.status] = (counts[call.status] ?? 0) + 1;
+    return counts;
+  }, {});
+  const activitySummary = [
+    statusCounts.completed ? `${statusCounts.completed} completed` : null,
+    statusCounts.failed ? `${statusCounts.failed} failed` : null,
+    statusCounts.skipped ? `${statusCounts.skipped} skipped` : null,
+    statusCounts.awaiting_approval ? `${statusCounts.awaiting_approval} awaiting approval` : null,
+  ].filter(Boolean).join(" · ");
   return (
     <article className={`${styles.message} ${isUser ? styles.userMessage : styles.agentMessage}`}>
       {isUser ? <span className={styles.messageAvatar}>S</span> : <span className={styles.agentAvatar}><svg viewBox="0 0 24 24"><path d="M12 3.5 14.1 9.9 20.5 12l-6.4 2.1-2.1 6.4-2.1-6.4L3.5 12l6.4-2.1L12 3.5Z" /></svg></span>}
       <div className={styles.messageContent}>
         <div className={styles.messageByline}><strong>{isUser ? "You" : "LedgerLens"}</strong>{!isUser && <span>Financial detective</span>}</div>
         <div className={`${styles.messageText} ledgerlens-markdown`}><RichText content={message.content} /></div>
-        {!isUser && message.tools?.length ? <div className={styles.toolEvidence}><span>Evidence checked</span>{message.tools.map((tool) => <span className={styles.toolPill} key={tool}>{tool.replaceAll("_", " ")}</span>)}</div> : null}
+        {!isUser && toolCalls.length ? <details className={styles.toolActivity}>
+          <summary>
+            <span className={styles.toolActivityIcon} aria-hidden="true">⌘</span>
+            <span>Tool activity</span>
+            <span className={styles.toolActivityCount}>{toolCalls.length} calls · {activitySummary}</span>
+          </summary>
+          <div className={styles.toolActivityList}>
+            {toolCalls.map((call) => <article className={styles.toolCall} key={call.tool_call_id}>
+              <div className={styles.toolCallTop}>
+                <strong>{call.name.replaceAll("_", " ")}</strong>
+                <span className={`${styles.toolStatus} ${styles[`toolStatus_${call.status}`]}`}>
+                  {call.status === "awaiting_approval" ? "Awaiting approval" : call.status}
+                </span>
+              </div>
+              <details className={styles.toolCallDetails}>
+                <summary>View inputs and result</summary>
+                <div className={styles.toolDetailLabel}>Inputs</div>
+                <pre>{JSON.stringify(call.arguments, null, 2)}</pre>
+                {call.result !== null && call.result !== undefined ? <>
+                  <div className={styles.toolDetailLabel}>Result</div>
+                  <pre>{call.result}</pre>
+                </> : null}
+              </details>
+            </article>)}
+          </div>
+        </details> : !isUser && message.tools?.length ? <div className={styles.toolEvidence}><span>Evidence checked</span>{message.tools.map((tool) => <span className={styles.toolPill} key={tool}>{tool.replaceAll("_", " ")}</span>)}</div> : null}
       </div>
     </article>
   );
