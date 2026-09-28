@@ -1,4 +1,4 @@
 from .base import AgentResult, BaseAgent
-from .leakage_agent import LeakageAgent
+from .financial_detective import FinancialDetective
 
-__all__ = ["AgentResult", "BaseAgent", "LeakageAgent"]
+__all__ = ["AgentResult", "BaseAgent", "FinancialDetective"]

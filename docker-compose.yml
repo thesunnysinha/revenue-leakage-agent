@@ -1,0 +1,35 @@
+services:
+  agent-api:
+    build:
+      context: ./services/agent
+      dockerfile: ../../docker/agent/Dockerfile
+    container_name: leakage-agent-service
+    ports:
+      - "8000:8000"
+    env_file:
+      - ./env/agent/.env
+    volumes:
+      - ./services/agent/app:/app/app
+      - ./services/agent/server.py:/app/server.py
+      - ./data:/app/data
+    depends_on:
+      - jaeger
+
+  frontend:
+    build:
+      context: ./services/frontend
+      dockerfile: ../../docker/frontend/Dockerfile
+    container_name: leakage-agent-frontend
+    ports:
+      - "3000:3000"
+    env_file:
+      - ./env/frontend/.env.local
+    depends_on:
+      - agent-api
+
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    container_name: agent-observability
+    ports:
+      - "16686:16686"
+      - "4318:4318"

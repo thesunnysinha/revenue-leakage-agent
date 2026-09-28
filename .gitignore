@@ -4,6 +4,7 @@ prompts.md
 # Env secrets
 env/agent/.env
 env/frontend/.env.local
+services/frontend/.env.local
 
 # Python
 services/agent/.venv/
@@ -16,4 +17,4 @@ services/frontend/node_modules/
 services/frontend/.next/
 
 # Sandbox writes (keep .gitkeep)
-services/agent/data/sandbox/*.json
+data/sandbox/*.json

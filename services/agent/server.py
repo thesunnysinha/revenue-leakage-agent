@@ -1,5 +1,6 @@
 """Revenue Leakage Agent — HTTP Server."""
 from __future__ import annotations
+import secrets
 import time
 import uuid
 from contextlib import asynccontextmanager
@@ -11,7 +12,7 @@ from fastapi import FastAPI, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, RedirectResponse
 
-from app.agents import BaseAgent, LeakageAgent
+from app.agents import BaseAgent, FinancialDetective
 from app.agents.base import AgentResult
 from app.config import config
 from app.core.telemetry import get_logger, setup_telemetry, shutdown_tracing
@@ -40,7 +41,7 @@ ERROR_STATUS: Dict[Type[AgentServiceError], int] = {
 
 class ServerApplication:
     def __init__(self, agent: Optional[BaseAgent] = None) -> None:
-        self.agent: BaseAgent = agent or LeakageAgent()
+        self.agent: BaseAgent = agent or FinancialDetective()
         self.security_guardrail = SecurityGuardrail()
         self.pii_guardrail = PIIGuardrail()
         self.start_time: float = time.time()
@@ -138,7 +139,7 @@ class ServerApplication:
         @self.app.post("/api/v1/agent/chat", response_model=ChatResponse, tags=["Operations"])
         async def chat_endpoint(payload: ChatRequest, request: Request) -> ChatResponse:
             trace_id: str = getattr(request.state, "trace_id", str(uuid.uuid4()))
-            session_id: str = payload.session_id or f"sess-{uuid.uuid4().hex[:8]}"
+            session_id: str = payload.session_id or f"sess-{secrets.token_urlsafe(24)}"
             structlog.contextvars.bind_contextvars(session_id=session_id)
             validated = self.security_guardrail.evaluate(payload.query)
             sanitized = self.pii_guardrail.evaluate(validated)

@@ -1,49 +1,54 @@
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  color-scheme: light;
+  --background: #fbfcfa;
+  --foreground: #1b2926;
+  --font-geist-sans: "Avenir Next", "Segoe UI", Arial, sans-serif;
+  --font-geist-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
-
-html {
-  height: 100%;
-}
-
-html,
+* { box-sizing: border-box; }
+html, body { min-height: 100%; margin: 0; }
+html { background: var(--background); }
 body {
-  max-width: 100vw;
-  overflow-x: hidden;
-}
-
-body {
-  min-height: 100%;
-  display: flex;
-  flex-direction: column;
+  min-height: 100vh;
   color: var(--foreground);
   background: var(--background);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
   -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+button, input, textarea { font: inherit; }
+button { -webkit-tap-highlight-color: transparent; }
+::selection { color: #1b2926; background: #d9e8dc; }
+
+/* Keep the input anchored while long investigation replies scroll independently. */
+.ledgerlens-shell { height: 100dvh; min-height: 0; overflow: hidden; }
+.ledgerlens-rail { height: 100dvh; min-height: 0; overflow-y: auto; }
+.ledgerlens-main { height: 100dvh; min-height: 0; overflow: hidden; }
+.ledgerlens-topbar { flex: 0 0 70px; }
+.ledgerlens-conversation { min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
+.ledgerlens-composer { z-index: 2; flex: 0 0 auto; background: var(--background); }
+
+.ledgerlens-markdown { line-height: 1.75; }
+.ledgerlens-markdown p { margin: 0 0 .9em; }
+.ledgerlens-markdown h3 { margin: 1.2em 0 .45em; color: #3d5146; font-size: 1.02em; font-weight: 650; line-height: 1.45; }
+.ledgerlens-markdown ol,.ledgerlens-markdown ul { display: grid; gap: .45em; margin: .4em 0 1em; padding-left: 1.45em; }
+.ledgerlens-markdown li { padding-left: .2em; }
+.ledgerlens-markdown strong { color: #3c5145; font-weight: 650; }
+.ledgerlens-markdown code { padding: .1em .35em; border-radius: 4px; background: #f0f3ee; color: #425e4e; font-family: var(--font-geist-mono); font-size: .92em; }
+
+@media (max-width: 620px) {
+  .ledgerlens-shell { display: flex; flex-direction: column; }
+  .ledgerlens-rail { height: 58px; flex: 0 0 58px; overflow: hidden; }
+  .ledgerlens-main { height: calc(100dvh - 58px); flex: 1 1 auto; }
+  .ledgerlens-topbar { flex: 0 0 54px; }
 }
 
-* {
-  box-sizing: border-box;
-  padding: 0;
-  margin: 0;
-}
-
-a {
-  color: inherit;
-  text-decoration: none;
-}
-
-@media (prefers-color-scheme: dark) {
-  html {
-    color-scheme: dark;
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    scroll-behavior: auto !important;
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
   }
 }

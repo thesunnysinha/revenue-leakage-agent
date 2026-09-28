@@ -37,20 +37,20 @@ The agent should be **conversational and stateful**, not a fixed workflow or pip
 Here's an example of how a user might interact with the agent:
 
 ```
-User: Can you check if there are any revenue leakage issues with plan P-12345?
+User: Can you check if there are any revenue leakage issues with plan C-1001?
 
-Agent: I'll investigate plan P-12345 for you. Let me load the plan details and check the invoices...
-[Agent uses load_plan("P-12345") and query_invoices(...)]
-I found a discrepancy! Plan P-12345 should bill $10,000 monthly, but I only see invoices for September and November. October is missing. This represents $10,000 in missed revenue.
+Agent: I'll investigate plan C-1001 for you. Let me load the plan details and check the invoices...
+[Agent uses load_plan("C-1001") and query_invoices(...)]
+I found a discrepancy! Plan C-1001 should bill $10,000 monthly, but I only see invoices for September and November. October is missing. This represents $10,000 in missed revenue.
 
 User: What currency is that plan in?
 
-Agent: Plan P-12345 is in USD. The expected monthly amount is $10,000 USD.
+Agent: Plan C-1001 is in USD. The expected monthly amount is $10,000 USD.
 
 User: Can you create a make-good invoice for the missing October billing?
 
 Agent: I'll propose a make-good invoice for $10,000 USD for the missing October 2024 billing period.
-[Agent uses propose_make_good_invoice("P-12345", 10000, "Missing October 2024 billing")]
+[Agent uses propose_make_good_invoice("C-1001", 10000, "Missing October 2024 billing")]
 Proposal created. Would you like me to apply this to the sandbox?
 
 User: Yes, apply it.
@@ -63,7 +63,7 @@ Agent: Let me check the other invoices for this plan... September shows $10,000 
 ```
 
 Notice how the agent:
-- Maintains context about plan P-12345 throughout the conversation
+- Maintains context about plan C-1001 throughout the conversation
 - Answers follow-up questions that reference previous context ("What currency is that plan in?")
 - Understands references to previous actions ("What about the other months?")
 - Adapts its responses based on the conversation flow

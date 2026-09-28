@@ -12,13 +12,16 @@ logger = get_logger(__name__)
 class GroundednessGuardrail(BaseGuardrail):
     """Every figure or identifier in the answer must trace back to a tool result or the user's own message."""
 
-    CURRENCY_PATTERN: re.Pattern = re.compile(r"\$\d+(?:,\d{3})*(?:\.\d+)?")
+    CURRENCY_PATTERN: re.Pattern = re.compile(r"(?:\$|€|£)\s*\d+(?:,\d{3})*(?:\.\d+)?")
+    # JSON tool results use bare numeric values. Exclude hyphenated values so
+    # the numeric tail of IDs and components of ISO dates are not treated as amounts.
+    SOURCE_AMOUNT_PATTERN: re.Pattern = re.compile(r"(?<![A-Za-z0-9,-])\d+(?:,\d{3})*(?:\.\d+)?(?![A-Za-z0-9-])")
     PERCENT_PATTERN: re.Pattern = re.compile(r"\d+(?:\.\d+)?%")
     ID_PATTERN: re.Pattern = re.compile(r"\b(?:LF|ADJ)-[A-Z0-9]+(?:-[A-Z0-9]+)*\b|\b[A-Z]{2,4}-\d{3,6}\b")
 
     @staticmethod
     def _amount(figure: str) -> Decimal:
-        return Decimal(figure.lstrip("$").replace(",", ""))
+        return Decimal(figure.lstrip("$€£ ").replace(",", ""))
 
     @staticmethod
     def _percent(figure: str) -> Decimal:
@@ -33,7 +36,8 @@ class GroundednessGuardrail(BaseGuardrail):
         )
         ungrounded: List[str] = []
         for pattern, normalize in checks:
-            known = {normalize(f) for f in pattern.findall(combined)}
+            source_values = self.SOURCE_AMOUNT_PATTERN.findall(combined) if pattern is self.CURRENCY_PATTERN else pattern.findall(combined)
+            known = {normalize(f) for f in source_values}
             for figure in dict.fromkeys(pattern.findall(final_response)):
                 if normalize(figure) not in known:
                     ungrounded.append(figure)
