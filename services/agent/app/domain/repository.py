@@ -19,9 +19,7 @@ T = TypeVar("T", bound=BaseModel)
 class BillingRepository:
     def __init__(self, data_dir: Path) -> None:
         self._data_dir = data_dir
-        self._plans: Dict[str, BillingPlan] = {
-            p.plan_id: p for p in self._load("billing_plans", BillingPlan)
-        }
+        self._plans: Dict[str, BillingPlan] = {p.plan_id: p for p in self._load("billing_plans", BillingPlan)}
         self._invoices: List[Invoice] = self._load("invoices", Invoice)
         self._credit_memos: List[CreditMemo] = self._load("credit_memos", CreditMemo)
         self._rates: List[ExchangeRate] = self._load("exchange_rates", ExchangeRate)
@@ -91,6 +89,42 @@ class BillingRepository:
                 return Decimal("1") / r.rate
         return None
 
+    def demo_overview(self) -> Dict[str, Any]:
+        """Summarize bundled demo fixtures and applied sandbox actions."""
+        sandbox_actions = sum(
+            len(self._read_sandbox(ledger))
+            for ledger in ("make_good_invoices", "credit_memos", "plan_amendments")
+        )
+        return {
+            "environment": "test",
+            "dataset_status": "ready",
+            "sample_data": True,
+            "counts": {
+                "plans": len(self._plans),
+                "invoices": len(self._invoices),
+                "credit_memos": len(self._credit_memos),
+                "exchange_rates": len(self._rates),
+                "sandbox_actions": sandbox_actions,
+            },
+            "customers": sorted({plan.customer_name for plan in self._plans.values()}),
+            "plans": [
+                {"plan_id": plan.plan_id, "customer_name": plan.customer_name}
+                for plan in sorted(self._plans.values(), key=lambda item: item.plan_id)
+            ],
+        }
+
+    def billing_data(self) -> Dict[str, Any]:
+        """Return the fixture ledgers in JSON-safe form without converting money to floats."""
+        return {
+            "plans": [item.model_dump(mode="json") for item in self.all_plans()],
+            "invoices": [item.model_dump(mode="json") for item in self.all_invoices()],
+            "credit_memos": [item.model_dump(mode="json") for item in self._credit_memos],
+            "exchange_rates": [item.model_dump(mode="json") for item in self._rates],
+        }
+
+    def sandbox_activity(self) -> List[Dict[str, Any]]:
+        """Return applied and rolled-back sandbox actions from the audit ledger."""
+        return self._read_sandbox("audit_log")
     # ---- sandbox writes --------------------------------------------------------------
 
     def apply_action(self, draft: ActionDraft) -> AppliedAction:
@@ -122,14 +156,16 @@ class BillingRepository:
             filtered = [r for r in records if r.get("action_id") != action_id]
             if len(filtered) < len(records):
                 self._write_sandbox(name, filtered)
-                self._append_audit(AppliedAction(
-                    action_id=f"ROLLBACK-{action_id}",
-                    draft_id="",
-                    action_type="rollback",
-                    plan_id="",
-                    applied_at=datetime.now(tz=timezone.utc).isoformat(),
-                    details={"rolled_back_action_id": action_id},
-                ))
+                self._append_audit(
+                    AppliedAction(
+                        action_id=f"ROLLBACK-{action_id}",
+                        draft_id="",
+                        action_type="rollback",
+                        plan_id="",
+                        applied_at=datetime.now(tz=timezone.utc).isoformat(),
+                        details={"rolled_back_action_id": action_id},
+                    )
+                )
                 return f"Action {action_id} rolled back successfully."
         return f"Action {action_id} not found in sandbox."
 
@@ -137,6 +173,17 @@ class BillingRepository:
         records = self._read_sandbox("audit_log")
         records.append(entry.model_dump())
         self._write_sandbox("audit_log", records)
+
+
+def setup_demo_data(data_dir: Path) -> BillingRepository:
+    """Validate bundled source fixtures and prepare missing sandbox storage safely."""
+    required_sources = ("billing_plans.json", "invoices.json", "credit_memos.json", "exchange_rates.json")
+    missing = [name for name in required_sources if not (data_dir / name).is_file()]
+    if missing:
+        raise FileNotFoundError(f"Demo dataset is incomplete in {data_dir}: {', '.join(missing)}")
+    repository = BillingRepository(data_dir)
+    (data_dir / "sandbox").mkdir(parents=True, exist_ok=True)
+    return repository
 
 
 @lru_cache(maxsize=1)

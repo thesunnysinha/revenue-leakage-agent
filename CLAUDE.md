@@ -11,18 +11,31 @@ A stateful AI "financial detective" agent that investigates revenue leakage betw
 All commands run from the repo root via `run.py`:
 
 ```bash
-python run.py docker up        # build + start agent, frontend, jaeger (detached)
-python run.py docker down      # stop and remove containers + volumes
-python run.py docker logs      # tail agent-api logs
-python run.py dev              # run FastAPI locally with uv (injects DATA_DIR automatically)
-python run.py sync             # uv sync — install/update Python deps
-python run.py check            # ruff lint + pytest
-python run.py test             # smoke test against running server
+python run.py docker up       # build and start the full app in Docker
+python run.py docker down     # stop containers; persisted Postgres data is retained
+python run.py docker logs     # follow agent-api logs
+python run.py dev             # run FastAPI locally with uv
+python run.py sync            # install/update Python dependencies
+python run.py check           # run Ruff and pytest
 ```
+
+**First-time Docker setup:**
+```bash
+cp env/agent/.env.example env/agent/.env
+cp env/frontend/.env.local.example env/frontend/.env.local
+python -c "import secrets; print(secrets.token_urlsafe(48))"
+# Set OPENAI_API_KEY and BACKEND_API_TOKEN in env/agent/.env.
+# Set the same BACKEND_API_TOKEN in env/frontend/.env.local.
+python run.py docker up
+```
+
+Open the app at **http://localhost:3000**. Backend health is at **http://localhost:8000/health** and Jaeger is at **http://localhost:16686**. Source changes hot reload in Docker. `python run.py docker down` preserves chat history in the Postgres volume and sandbox data in `data/`.
 
 **Local FastAPI dev** (without Docker):
 ```bash
 # 1. Copy env/agent/.env.example → env/agent/.env and fill OPENAI_API_KEY + DATA_DIR
+# 2. Start the PostgreSQL dependency (data survives docker compose down)
+docker compose up -d postgres
 python run.py sync
 python run.py dev
 ```
@@ -31,7 +44,7 @@ python run.py dev
 ```bash
 cd services/frontend
 npm install
-npm run dev   # starts on :3000, proxies to localhost:8000 via Route Handlers
+npm run dev   # starts on :3000 with Next.js Fast Refresh, proxies to localhost:8000
 ```
 
 **Python linting + formatting:**
@@ -62,6 +75,8 @@ Browser ← Next.js Route Handler (/api/approval) ← FastAPI /api/v1/agent/appr
 ### Backend: `services/agent/`
 
 **Entry point:** `server.py` — `ServerApplication` wraps FastAPI, wires middleware, exception handlers, and three routes: `GET /health`, `POST /api/v1/agent/chat`, `POST /api/v1/agent/approval`.
+
+**Chat persistence:** SQLAlchemy ORM models in `app/domain/chat_models.py` and `ChatRepository` store chat session titles, messages, tool metadata, and pending approval details in PostgreSQL. Alembic revisions under `alembic/versions/` own schema changes and run at API startup. LangGraph checkpoints use `AsyncPostgresSaver` against the same database so an approval can resume after an API restart. Chat routes are `GET/POST /api/v1/chats` and `GET /api/v1/chats/{session_id}`.
 
 **Agent graph** (`app/agents/financial_detective.py`): A LangGraph `StateGraph` with five nodes:
 - `agent` — LLM reasoning node (GPT-4o with tools bound); checks loop guard and approval gate before returning
@@ -133,14 +148,14 @@ Approval responses are injected back into the message list via `setMessages(prev
 
 ### Infrastructure
 
-- **`docker-compose.yml`** at root — three services: `agent-api` (:8000), `frontend` (:3000), `jaeger` (:16686 UI, :4318 OTLP)
+- **`docker-compose.yml`** at root — four services: `agent-api` (:8000), `frontend` (:3000), PostgreSQL (:5432), and Jaeger (:16686 UI, :4318 OTLP). PostgreSQL data persists in the `postgres-data` volume.
 - **`docker/agent/Dockerfile`** — multi-stage uv build, non-root `appuser` (uid 10001)
 - **`docker/frontend/Dockerfile`** — Next.js standalone build
-- Hot-reload in Docker: `services/agent/app/` and `server.py` are volume-mounted into the container
+- Hot-reload in Docker: backend source mounts use Uvicorn/watchfiles polling; frontend source mounts run Next.js dev with webpack polling for reliable macOS bind-mount updates. The frontend production image remains a separate build target.
 
 ### Key Invariants
 
 - **HITL is enforced at runtime, not prompt level.** `interrupt()` in `_approval_node` makes it physically impossible for `apply`/`rollback` to execute without a `Command(resume=...)` from the approval endpoint.
-- **`DATA_DIR` must be set for local dev.** `run.py dev` injects it; direct `uv run python server.py` without the env var will default to `services/agent/data` (doesn't exist).
-- **Session continuity.** The `thread_id` passed to `InMemorySaver` is the `session_id`. Each `/chat` call checks `graph.aget_state(cfg).next` — if non-empty, the graph is paused awaiting approval and a `409 ApprovalPendingError` is raised to prevent overwriting in-flight state.
+- **`DATA_DIR` and `DATABASE_URL` must be set for local dev.** `run.py dev` injects the root data path and rewrites the Compose hostname to localhost.
+- **Session continuity.** The `session_id` is the LangGraph `thread_id`; `AsyncPostgresSaver` persists state and pending approvals across restarts. Each `/chat` call checks `graph.aget_state(cfg).next` and rejects new input while an approval is pending.
 - **Money uses `Decimal`.** `BillingRepository` loads JSON with `parse_float=Decimal`. Do not use `float` for financial calculations.

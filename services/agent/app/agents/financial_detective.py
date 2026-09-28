@@ -1,5 +1,6 @@
 from __future__ import annotations
-from typing import Any, Dict, List, Optional
+import sys
+from typing import Any, Callable, Dict, List, Optional
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, RemoveMessage, SystemMessage, ToolMessage
 from langgraph.checkpoint.memory import InMemorySaver
@@ -13,11 +14,17 @@ from app.agents.base import AgentResult, BaseAgent
 from app.agents.state import AgentState
 from app.core.llm import build_chat_model
 from app.core.telemetry import get_logger, trace_context, tracing_callbacks
+from app.core.tool_logging import ToolCallLoggingHandler
 from app.domain.prompts import PromptRegistry
 from app.domain.tools import REGISTERED_TOOLS, handle_tool_error
 from app.exceptions import (
-    AgentServiceError, ApprovalPendingError, GraphUninitializedError,
-    LoopBreakerError, NoPendingApprovalError, OutputHallucinationError, ProviderModelError,
+    AgentServiceError,
+    ApprovalPendingError,
+    GraphUninitializedError,
+    LoopBreakerError,
+    NoPendingApprovalError,
+    OutputHallucinationError,
+    ProviderModelError,
 )
 from app.guardrails.financial import ApprovalPolicyGuardrail
 from app.guardrails.groundedness import GroundednessGuardrail
@@ -40,6 +47,25 @@ class FinancialDetective(BaseAgent):
         self._loop_guardrail = LoopGuardrail()
         self._compiled_graph: Optional[CompiledStateGraph] = None
         self._llm_with_tools: Any = None
+        self._checkpointer_context: Any = None
+
+    async def startup(self, database_url: str) -> None:
+        from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+
+        self._checkpointer_context = AsyncPostgresSaver.from_conn_string(database_url)
+        self._checkpointer = await self._checkpointer_context.__aenter__()
+        try:
+            await self._checkpointer.setup()
+            self.compile()
+        except Exception:
+            await self._checkpointer_context.__aexit__(*sys.exc_info())
+            self._checkpointer_context = None
+            raise
+
+    async def shutdown(self) -> None:
+        if self._checkpointer_context is not None:
+            await self._checkpointer_context.__aexit__(None, None, None)
+            self._checkpointer_context = None
 
     # ---- nodes -----------------------------------------------------------------------
 
@@ -52,16 +78,27 @@ class FinancialDetective(BaseAgent):
             logger.warning("agent.loop.halted", step_count=step_count)
             return {"step_count": step_count, "loop_detected": True}
 
-        response = await self._llm_with_tools.ainvoke(
-            [SystemMessage(content=self._system_prompt), *messages]
-        )
+        response = await self._llm_with_tools.ainvoke([SystemMessage(content=self._system_prompt), *messages])
 
         reasons: List[str] = []
         calls: List[Dict[str, Any]] = []
         for call in getattr(response, "tool_calls", None) or []:
-            if self._loop_guardrail.would_repeat_too_often(call["name"], call["args"], turn):
-                return {"step_count": step_count, "loop_detected": True}
             reason = self._approval_guardrail.approval_reason(call["name"], call["args"])
+            logger.info(
+                "agent.tool.requested",
+                tool_name=call["name"],
+                tool_call_id=call["id"],
+                argument_names=sorted(str(key) for key in call["args"]),
+                approval_required=bool(reason),
+            )
+            if self._loop_guardrail.would_repeat_too_often(call["name"], call["args"], turn):
+                logger.warning(
+                    "agent.tool.blocked",
+                    tool_name=call["name"],
+                    tool_call_id=call["id"],
+                    block_reason="loop_guard",
+                )
+                return {"step_count": step_count, "loop_detected": True}
             if reason:
                 reasons.append(reason)
                 calls.append({"tool": call["name"], "args": call["args"], "id": call["id"]})
@@ -99,7 +136,9 @@ class FinancialDetective(BaseAgent):
         rejected = [
             ToolMessage(
                 content=f"Action rejected by reviewer. Notes: {notes}",
-                tool_call_id=c["id"], name=c["tool"], status="error",
+                tool_call_id=c["id"],
+                name=c["tool"],
+                status="error",
             )
             for c in (pending or {}).get("calls", [])
         ]
@@ -109,15 +148,13 @@ class FinancialDetective(BaseAgent):
     def _verify_node(self, state: AgentState) -> Command:
         last = state["messages"][-1]
         sources = [
-            str(m.content) for m in state["messages"]
-            if isinstance(m, ToolMessage) or (
-                isinstance(m, HumanMessage) and not m.additional_kwargs.get(FEEDBACK_FLAG)
-            )
+            str(m.content)
+            for m in state["messages"]
+            if isinstance(m, ToolMessage) or (isinstance(m, HumanMessage) and not m.additional_kwargs.get(FEEDBACK_FLAG))
         ]
         ungrounded = self._groundedness_guardrail.find_ungrounded(str(last.content), sources)
         scaffolding = [
-            RemoveMessage(id=m.id) for m in current_turn(list(state["messages"]))
-            if isinstance(m, HumanMessage) and m.additional_kwargs.get(FEEDBACK_FLAG)
+            RemoveMessage(id=m.id) for m in current_turn(list(state["messages"])) if isinstance(m, HumanMessage) and m.additional_kwargs.get(FEEDBACK_FLAG)
         ]
         if not ungrounded:
             return Command(goto=END, update={"messages": scaffolding} if scaffolding else None)
@@ -157,12 +194,16 @@ class FinancialDetective(BaseAgent):
                 return "tools"
             return "verify"
 
-        builder.add_conditional_edges("agent", route, {
-            "fallback": "fallback",
-            "approval_gate": "approval_gate",
-            "tools": "tools",
-            "verify": "verify",
-        })
+        builder.add_conditional_edges(
+            "agent",
+            route,
+            {
+                "fallback": "fallback",
+                "approval_gate": "approval_gate",
+                "tools": "tools",
+                "verify": "verify",
+            },
+        )
         builder.add_edge("fallback", END)
         builder.add_edge("tools", "agent")
 
@@ -184,7 +225,7 @@ class FinancialDetective(BaseAgent):
             raise GraphUninitializedError()
         return self._compiled_graph
 
-    async def execute(self, query: str, session_id: str, trace_id: str) -> AgentResult:
+    async def execute(self, query: str, session_id: str, trace_id: str, progress_callback: Optional[Callable[[str, str, str], None]] = None) -> AgentResult:
         graph = self._require_graph()
         cfg = self._thread_config(session_id)
         snapshot = await graph.aget_state(cfg)
@@ -192,11 +233,14 @@ class FinancialDetective(BaseAgent):
             raise ApprovalPendingError(session_id)
         initial: Dict[str, Any] = {
             "messages": [HumanMessage(content=query)],
-            "step_count": 0, "loop_detected": False,
-            "requires_approval": False, "pending_action": None,
-            "verify_attempts": 0, "ungrounded_values": [],
+            "step_count": 0,
+            "loop_detected": False,
+            "requires_approval": False,
+            "pending_action": None,
+            "verify_attempts": 0,
+            "ungrounded_values": [],
         }
-        return await self._run(graph, initial, cfg, trace_id)
+        return await self._run(graph, initial, cfg, trace_id, progress_callback=progress_callback)
 
     async def resume_approval(self, session_id: str, approved: bool, notes: Optional[str], trace_id: str) -> AgentResult:
         graph = self._require_graph()
@@ -204,11 +248,30 @@ class FinancialDetective(BaseAgent):
         snapshot = await graph.aget_state(cfg)
         if not snapshot.next:
             raise NoPendingApprovalError(session_id)
-        return await self._run(graph, Command(resume={"approved": approved, "notes": notes}), cfg, trace_id)
+        completed_tool_call_ids = {str(message.tool_call_id) for message in snapshot.values.get("messages", []) if isinstance(message, ToolMessage)}
+        return await self._run(
+            graph,
+            Command(resume={"approved": approved, "notes": notes}),
+            cfg,
+            trace_id,
+            completed_tool_call_ids=completed_tool_call_ids,
+        )
 
-    async def _run(self, graph: CompiledStateGraph, graph_input: Any, cfg: Dict[str, Any], trace_id: str) -> AgentResult:
+    async def _run(
+        self,
+        graph: CompiledStateGraph,
+        graph_input: Any,
+        cfg: Dict[str, Any],
+        trace_id: str,
+        completed_tool_call_ids: Optional[set[str]] = None,
+        progress_callback: Optional[Callable[[str, str, str], None]] = None,
+    ) -> AgentResult:
         session_id = cfg["configurable"]["thread_id"]
-        run_config = {**cfg, "callbacks": tracing_callbacks(), "run_name": "financial-detective"}
+        run_config = {
+            **cfg,
+            "callbacks": [*tracing_callbacks(), ToolCallLoggingHandler(progress_callback)],
+            "run_name": "financial-detective",
+        }
         try:
             with trace_context(session_id, trace_id):
                 result = await graph.ainvoke(graph_input, config=run_config)
@@ -219,6 +282,7 @@ class FinancialDetective(BaseAgent):
         except Exception as exc:
             logger.error("agent.model.invocation_failed", error_type=type(exc).__name__, exc_info=True)
             from app.config import config as app_config
+
             raise ProviderModelError(
                 provider=app_config.model_name,
                 reason=f"upstream request failed ({type(exc).__name__})",
@@ -227,10 +291,8 @@ class FinancialDetective(BaseAgent):
 
         messages: List[BaseMessage] = result.get("messages", [])
         turn = current_turn(messages)
-        tools_executed = [
-            m.name or "tool" for m in turn
-            if isinstance(m, ToolMessage) and not str(m.content).startswith(DUPLICATE_PREFIX)
-        ]
+        tools_executed = [m.name or "tool" for m in turn if isinstance(m, ToolMessage) and not str(m.content).startswith(DUPLICATE_PREFIX)]
+        tool_calls = self._tool_call_records(turn, completed_tool_call_ids)
 
         interrupts = result.get("__interrupt__")
         if interrupts:
@@ -238,6 +300,7 @@ class FinancialDetective(BaseAgent):
             return AgentResult(
                 response="Action requires human approval before it can be applied.",
                 tools_executed=tools_executed,
+                tool_calls=tool_calls,
                 requires_approval=True,
                 pending_action=interrupts[0].value,
             )
@@ -247,4 +310,35 @@ class FinancialDetective(BaseAgent):
 
         if not messages:
             return AgentResult(response="No response generated.")
-        return AgentResult(response=str(messages[-1].content), tools_executed=tools_executed)
+        return AgentResult(response=str(messages[-1].content), tools_executed=tools_executed, tool_calls=tool_calls)
+
+    @staticmethod
+    def _tool_call_records(messages: List[BaseMessage], exclude_tool_call_ids: Optional[set[str]] = None) -> List[Dict[str, Any]]:
+        records: Dict[str, Dict[str, Any]] = {}
+        ordered_ids: List[str] = []
+        for message in messages:
+            if isinstance(message, AIMessage):
+                for call in message.tool_calls:
+                    call_id = str(call.get("id") or f"tool-{len(ordered_ids)}")
+                    records[call_id] = {
+                        "tool_call_id": call_id,
+                        "name": str(call.get("name") or "unknown"),
+                        "arguments": call.get("args") if isinstance(call.get("args"), dict) else {},
+                        "status": "awaiting_approval",
+                        "result": None,
+                    }
+                    ordered_ids.append(call_id)
+            elif isinstance(message, ToolMessage):
+                call_id = str(message.tool_call_id)
+                record = records.get(call_id)
+                if record is None:
+                    continue
+                content = str(message.content)
+                if content.startswith(DUPLICATE_PREFIX):
+                    record["status"] = "skipped"
+                elif message.status == "error":
+                    record["status"] = "failed"
+                else:
+                    record["status"] = "completed"
+                record["result"] = content if len(content) <= 1200 else content[:1200] + " … (truncated)"
+        return [records[call_id] for call_id in ordered_ids if call_id not in (exclude_tool_call_ids or set())]

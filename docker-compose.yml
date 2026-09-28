@@ -1,4 +1,19 @@
 services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: ledgerlens-postgres
+    env_file:
+      - ./env/agent/.env
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 3s
+      retries: 15
+
   agent-api:
     build:
       context: ./services/agent
@@ -13,17 +28,30 @@ services:
       - ./services/agent/server.py:/app/server.py
       - ./data:/app/data
     depends_on:
-      - jaeger
+      postgres:
+        condition: service_healthy
+      jaeger:
+        condition: service_started
 
   frontend:
     build:
       context: ./services/frontend
       dockerfile: ../../docker/frontend/Dockerfile
+      target: development
     container_name: leakage-agent-frontend
     ports:
       - "3000:3000"
     env_file:
       - ./env/frontend/.env.local
+    volumes:
+      - ./services/frontend/app:/app/app
+      - ./services/frontend/components:/app/components
+      - ./services/frontend/lib:/app/lib
+      - ./services/frontend/store:/app/store
+      - ./services/frontend/public:/app/public
+      - ./services/frontend/next.config.ts:/app/next.config.ts
+      - ./services/frontend/tsconfig.json:/app/tsconfig.json
+      - ./services/frontend/next-env.d.ts:/app/next-env.d.ts
     depends_on:
       - agent-api
 
@@ -33,3 +61,6 @@ services:
     ports:
       - "16686:16686"
       - "4318:4318"
+
+volumes:
+  postgres-data:

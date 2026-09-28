@@ -76,7 +76,7 @@ class LoopGuardrail(BaseGuardrail):
         return False
 
     def no_progress(self, turn: Sequence[BaseMessage]) -> bool:
-        window = self._completed_calls(turn)[-self.NO_PROGRESS_WINDOW:]
+        window = self._completed_calls(turn)[-self.NO_PROGRESS_WINDOW :]
         for _, result_sig, _ in window:
             if sum(1 for _, other, _ in window if other == result_sig) >= self.NO_PROGRESS_REPEATS:
                 logger.error("guardrail.loop.no_progress")

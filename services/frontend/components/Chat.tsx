@@ -2,21 +2,27 @@
 
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport, type TextUIPart, type UIMessage } from "ai";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useChatStore } from "@/store/chat";
 import ApprovalCard from "./ApprovalCard";
+import ActivityLogView from "./ActivityLogView";
+import BillingDataView from "./BillingDataView";
 import MessageBubble from "./MessageBubble";
 import styles from "./Chat.module.css";
-import type { ChatResponse } from "@/lib/api";
+import type { ChatResponse, ChatSummary, ChatTranscript, ToolCallRecord } from "@/lib/api";
 
 type ChatMetadata = {
   session_id?: string;
   requires_human_approval?: boolean;
   pending_approval_details?: Record<string, unknown> | null;
   tools_executed?: string[];
+  tool_calls?: ToolCallRecord[];
   latency_ms?: number;
+  approval_decision?: boolean;
 };
 type AppUIMessage = UIMessage<ChatMetadata>;
+type WorkspaceView = "chat" | "billing" | "activity";
+type LiveToolProgress = { tool_run_id: string; tool_name: string; status: "started" | "completed" | "failed" };
 
 function readableError(error: Error | undefined): string | undefined {
   if (!error) return undefined;
@@ -39,16 +45,41 @@ const suggestions = [
   { title: "Check FX adjustments", prompt: "Review cross-currency invoices and related credit memos.", icon: "⇄" },
 ];
 
+type DemoOverview = {
+  environment: string;
+  dataset_status: string;
+  sample_data: boolean;
+  counts: { plans: number; invoices: number; credit_memos: number; exchange_rates: number; sandbox_actions: number };
+  customers: string[];
+  plans: { plan_id: string; customer_name: string }[];
+};
+
 function SparkMark() {
   return <span className={styles.sparkMark} aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 2.8 14.4 9.6 21.2 12l-6.8 2.4L12 21.2l-2.4-6.8L2.8 12l6.8-2.4L12 2.8Z" /><path d="m19 2 .8 2.2L22 5l-2.2.8L19 8l-.8-2.2L16 5l2.2-.8L19 2Z" /></svg></span>;
 }
 
 export default function Chat() {
-  const { sessionId, pendingApproval, setSessionId, setPendingApproval, clearApproval, resetSession } = useChatStore();
+  const { sessionId, chats, setChats, upsertChat, pendingApproval, setSessionId, setPendingApproval, clearApproval, resetSession } = useChatStore();
   const [input, setInput] = useState("");
   const [approvalBusy, setApprovalBusy] = useState(false);
   const [approvalError, setApprovalError] = useState<string | null>(null);
+  const [chatLoadError, setChatLoadError] = useState<string | null>(null);
+  const [chatsReady, setChatsReady] = useState(false);
+  const [signedOut, setSignedOut] = useState(false);
+  const [requestStarting, setRequestStarting] = useState(false);
+  const [liveToolProgress, setLiveToolProgress] = useState<LiveToolProgress[]>([]);
+  const [demoOverview, setDemoOverview] = useState<DemoOverview | null>(null);
+  const [activeView, setActiveView] = useState<WorkspaceView>("chat");
   const conversationRef = useRef<HTMLElement | null>(null);
+  const progressStreamRef = useRef<EventSource | null>(null);
+  const requestSentRef = useRef(false);
+  const refreshChats = useCallback(async () => {
+    const response = await fetch("/api/chats", { cache: "no-store" });
+    if (!response.ok) throw new Error("Could not load saved investigations.");
+    const savedChats = await response.json() as ChatSummary[];
+    setChats(savedChats);
+    return savedChats;
+  }, [setChats]);
   const transport = useMemo(() => new DefaultChatTransport({
     api: "/api/chat",
     prepareSendMessagesRequest({ messages }) {
@@ -60,36 +91,165 @@ export default function Chat() {
   const { messages, sendMessage, setMessages, status, error, clearError } = useChat<AppUIMessage>({
     transport,
     onFinish({ message }) {
+      progressStreamRef.current?.close();
+      progressStreamRef.current = null;
+      setRequestStarting(false);
+      setLiveToolProgress([]);
       const meta = message.metadata;
       if (meta?.session_id) setSessionId(meta.session_id);
       if (meta?.requires_human_approval && meta.pending_approval_details) setPendingApproval(meta.pending_approval_details);
       else if (meta?.session_id) clearApproval();
+      void refreshChats().catch((cause: unknown) => setChatLoadError(cause instanceof Error ? cause.message : "Could not refresh saved chats."));
+    },
+    onError() {
+      progressStreamRef.current?.close();
+      progressStreamRef.current = null;
+      setRequestStarting(false);
+      setLiveToolProgress([]);
     },
   });
+
+  useEffect(() => () => progressStreamRef.current?.close(), []);
 
   useEffect(() => {
     const pane = conversationRef.current;
     if (pane) pane.scrollTop = pane.scrollHeight;
   }, [messages, status, pendingApproval]);
 
-  const busy = status === "submitted" || status === "streaming" || approvalBusy;
+  useEffect(() => {
+    let cancelled = false;
+    void fetch("/api/demo/overview", { cache: "no-store" })
+      .then(async (response) => {
+        if (!response.ok) throw new Error("Demo data unavailable");
+        return await response.json() as DemoOverview;
+      })
+      .then((overview) => { if (!cancelled) setDemoOverview(overview); })
+      .catch(() => { if (!cancelled) setDemoOverview(null); });
+    return () => { cancelled = true; };
+  }, []);
+
+  const loadChat = useCallback(async (chatId: string) => {
+    const response = await fetch(`/api/chats/${encodeURIComponent(chatId)}`, { cache: "no-store" });
+    if (!response.ok) throw new Error("Could not open this saved investigation.");
+    const transcript = await response.json() as ChatTranscript;
+    setSessionId(transcript.session_id);
+    setPendingApproval(transcript.pending_approval_details);
+    setMessages(transcript.messages.map((message) => ({
+      id: message.id,
+      role: message.role,
+      parts: [{ type: "text" as const, text: message.content }],
+      metadata: {
+        session_id: transcript.session_id,
+        tools_executed: message.tools_executed,
+        tool_calls: message.tool_calls,
+        requires_human_approval: Boolean(message.metadata.pending_approval_details),
+        pending_approval_details: (message.metadata.pending_approval_details as Record<string, unknown> | undefined) ?? null,
+        approval_decision: message.metadata.approval_decision as boolean | undefined,
+      },
+    } as AppUIMessage)));
+    setChatLoadError(null);
+  }, [setMessages, setPendingApproval, setSessionId]);
+
+  const createNewChat = useCallback(async () => {
+    const response = await fetch("/api/chats", { method: "POST" });
+    if (!response.ok) throw new Error("Could not create a new investigation.");
+    const chat = await response.json() as ChatSummary;
+    upsertChat(chat);
+    setSessionId(chat.session_id);
+    setMessages([]);
+    clearApproval();
+    setInput("");
+    setActiveView("chat");
+    setSignedOut(false);
+    setChatLoadError(null);
+  }, [clearApproval, setMessages, setSessionId, upsertChat]);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function initializeChats() {
+      try {
+        if (sessionStorage.getItem("ledgerlens-demo-signed-out") === "true") {
+          if (!cancelled) setSignedOut(true);
+          return;
+        }
+        const savedChats = await refreshChats();
+        if (cancelled) return;
+        if (savedChats.length > 0) await loadChat(savedChats[0].session_id);
+        else await createNewChat();
+      } catch (cause) {
+        if (!cancelled) setChatLoadError(cause instanceof Error ? cause.message : "Could not load saved investigations.");
+      } finally {
+        if (!cancelled) setChatsReady(true);
+      }
+    }
+    void initializeChats();
+    return () => { cancelled = true; };
+  }, [createNewChat, loadChat, refreshChats]);
+
+  const busy = !chatsReady || requestStarting || status === "submitted" || status === "streaming" || approvalBusy;
   const hasConversation = messages.length > 0;
 
   function submit(query = input) {
     const value = query.trim();
-    if (!value || busy || pendingApproval) return;
+    if (!value || busy || !sessionId || pendingApproval) return;
     clearError();
     setApprovalError(null);
-    void sendMessage({ text: value });
+    progressStreamRef.current?.close();
+    setLiveToolProgress([]);
+    setRequestStarting(true);
+    requestSentRef.current = false;
+    const stream = new EventSource(`/api/tool-progress?sessionId=${encodeURIComponent(sessionId)}`);
+    progressStreamRef.current = stream;
+    const send = () => {
+      if (requestSentRef.current) return;
+      requestSentRef.current = true;
+      setRequestStarting(false);
+      void sendMessage({ text: value });
+    };
+    stream.onopen = send;
+    stream.addEventListener("tool", (event) => {
+      try {
+        const update = JSON.parse((event as MessageEvent<string>).data) as LiveToolProgress;
+        setLiveToolProgress((previous) => {
+          const index = previous.findIndex((item) => item.tool_run_id === update.tool_run_id);
+          if (index < 0) return [...previous, update];
+          const next = [...previous];
+          next[index] = update;
+          return next;
+        });
+      } catch {
+        // Ignore malformed progress events; the completed response remains authoritative.
+      }
+    });
+    stream.onerror = () => {
+      stream.close();
+      if (progressStreamRef.current === stream) progressStreamRef.current = null;
+      if (!requestSentRef.current) send();
+    };
     setInput("");
   }
 
-  function startNewInvestigation() {
-    setMessages([]);
-    resetSession();
-    clearError();
-    setApprovalError(null);
-    setInput("");
+  async function startNewInvestigation() {
+    try {
+      await createNewChat();
+      clearError();
+      setApprovalError(null);
+    } catch (cause) {
+      setChatLoadError(cause instanceof Error ? cause.message : "Could not create a new investigation.");
+    }
+  }
+
+  async function selectInvestigation(chatId: string) {
+    if (busy || chatId === sessionId) return;
+    try {
+      await loadChat(chatId);
+      setActiveView("chat");
+      setInput("");
+      clearError();
+      setApprovalError(null);
+    } catch (cause) {
+      setChatLoadError(cause instanceof Error ? cause.message : "Could not open this saved investigation.");
+    }
   }
 
   async function decideApproval(approved: boolean) {
@@ -104,7 +264,11 @@ export default function Chat() {
       });
       const result = await res.json() as ChatResponse & { message?: string };
       if (!res.ok) throw new Error(result.message || result.response || "Approval request failed.");
-      setMessages((previous) => [...previous, {
+      const decisionMessage: AppUIMessage = {
+        id: crypto.randomUUID(), role: "user",
+        parts: [{ type: "text", text: approved ? "Approved the proposed action." : "Rejected the proposed action." }],
+      };
+      setMessages((previous) => [...previous, decisionMessage, {
         id: crypto.randomUUID(), role: "assistant",
         parts: [{ type: "text", text: result.response }],
         metadata: {
@@ -112,6 +276,7 @@ export default function Chat() {
           requires_human_approval: result.requires_human_approval,
           pending_approval_details: result.pending_approval_details ?? null,
           tools_executed: result.tools_executed,
+          tool_calls: result.tool_calls,
           latency_ms: result.latency_ms,
         },
       } as AppUIMessage]);
@@ -124,6 +289,37 @@ export default function Chat() {
     }
   }
 
+  function signOut() {
+    sessionStorage.setItem("ledgerlens-demo-signed-out", "true");
+    progressStreamRef.current?.close();
+    progressStreamRef.current = null;
+    resetSession();
+    setChats([]);
+    setMessages([]);
+    setLiveToolProgress([]);
+    setActiveView("chat");
+    setSignedOut(true);
+  }
+
+  async function returnToDemo() {
+    sessionStorage.removeItem("ledgerlens-demo-signed-out");
+    setSignedOut(false);
+    setChatsReady(false);
+    try {
+      const savedChats = await refreshChats();
+      if (savedChats.length > 0) await loadChat(savedChats[0].session_id);
+      else await createNewChat();
+    } catch (cause) {
+      setChatLoadError(cause instanceof Error ? cause.message : "Could not reopen the demo workspace.");
+    } finally {
+      setChatsReady(true);
+    }
+  }
+
+  if (signedOut) {
+    return <main className={styles.signedOut}><div className={styles.signedOutCard}><SparkMark /><span className={styles.signedOutEyebrow}>LEDGERLENS DEMO</span><h1>You’re signed out</h1><p>Your saved investigations are still here. Re-enter the demo workspace whenever you’re ready.</p><button onClick={() => void returnToDemo()}>Return to demo</button></div></main>;
+  }
+
   return (
     <div className={`${styles.shell} ledgerlens-shell`}>
       <aside className={`${styles.rail} ledgerlens-rail`}>
@@ -134,16 +330,30 @@ export default function Chat() {
 
         <div className={styles.workspaceLabel}>WORKSPACE</div>
         <div className={styles.workspaceCard}>
-          <span className={styles.workspaceIcon}>N</span>
-          <span className={styles.workspaceText}><strong>Northstar SaaS</strong><small>Finance workspace</small></span>
+          <span className={styles.workspaceIcon}>D</span>
+          <span className={styles.workspaceText}><strong>LedgerLens Demo</strong><small>Sample finance workspace</small></span>
           <span className={styles.chevron}>⌄</span>
         </div>
 
+        <div className={`${styles.navGroup} ${styles.viewNav}`}>
+          <div className={styles.workspaceLabel}>WORKSPACE</div>
+          <button className={`${styles.navItem} ${activeView === "chat" ? styles.navActive : ""}`} onClick={() => setActiveView("chat")}><span>⌕</span> Investigations</button>
+          <button className={`${styles.navItem} ${activeView === "billing" ? styles.navActive : ""}`} onClick={() => setActiveView("billing")}><span>▤</span> Billing data</button>
+          <button className={`${styles.navItem} ${activeView === "activity" ? styles.navActive : ""}`} onClick={() => setActiveView("activity")}><span>◷</span> Activity log</button>
+        </div>
+
         <div className={styles.navGroup}>
-          <div className={styles.workspaceLabel}>TOOLS</div>
-          <div className={`${styles.navItem} ${styles.navActive}`}><span>⌕</span> Investigations <span className={styles.navCount}>01</span></div>
-          <div className={styles.navItem}><span>▤</span> Billing data</div>
-          <div className={styles.navItem}><span>◷</span> Activity log</div>
+          <div className={styles.workspaceLabel}>RECENT CHATS</div>
+          <button className={`${styles.navItem} ${styles.newChatNav}`} onClick={() => void startNewInvestigation()} disabled={!chatsReady || busy}><span>＋</span> New chat</button>
+          <div className={styles.chatList}>
+            {chats.map((chat) => <button
+              className={`${styles.navItem} ${styles.chatEntry} ${chat.session_id === sessionId ? styles.navActive : ""}`}
+              key={chat.session_id}
+              onClick={() => void selectInvestigation(chat.session_id)}
+              disabled={busy}
+              title={chat.title}
+            ><span>◷</span><span className={styles.chatEntryTitle}>{chat.title}</span></button>)}
+          </div>
         </div>
 
         <div className={styles.railBottom}>
@@ -151,22 +361,47 @@ export default function Chat() {
             <span className={styles.sandboxDot} />
             <div><strong>Sandbox mode</strong><small>Changes need your approval</small></div>
           </div>
-          <div className={styles.profile}><span className={styles.avatar}>S</span><span><strong>Sunny Sinha</strong><small>Finance analyst</small></span><button aria-label="Account options">···</button></div>
+          <div className={styles.profile}><span className={styles.avatar}>T</span><span><strong>Test reviewer</strong><small>Demo account</small></span></div>
         </div>
       </aside>
 
       <main className={`${styles.main} ledgerlens-main`} id="home">
         <header className={`${styles.topbar} ledgerlens-topbar`}>
-          <div className={styles.breadcrumb}><span>Workspace</span><i>/</i><strong>Investigations</strong></div>
-          <div className={styles.topActions}><span className={styles.online}><span /> Agent ready</span><button className={styles.newButton} onClick={startNewInvestigation}><span>＋</span> New investigation</button></div>
+          <div className={styles.breadcrumb}><span>Workspace</span><i>/</i><strong>{activeView === "billing" ? "Billing data" : activeView === "activity" ? "Activity log" : "Investigations"}</strong></div>
+          <select
+            className={styles.mobileChatSelect}
+            aria-label="Navigate workspace or switch investigation"
+            value={activeView === "chat" ? sessionId ?? "" : activeView}
+            onChange={(event) => {
+              if (event.target.value === "billing" || event.target.value === "activity") setActiveView(event.target.value);
+              else if (event.target.value) { setActiveView("chat"); void selectInvestigation(event.target.value); }
+            }}
+            disabled={busy}
+          >
+            <option value="billing">Billing data</option><option value="activity">Activity log</option>
+            {chats.map((chat) => <option key={chat.session_id} value={chat.session_id}>{chat.title}</option>)}
+          </select>
+          <div className={styles.topActions}><span className={styles.testBadge}>TEST ENVIRONMENT</span><span className={styles.online}><span /> Agent ready</span><button className={styles.newButton} onClick={() => void startNewInvestigation()} disabled={!chatsReady || busy}><span>＋</span> New investigation</button><button className={styles.logoutButton} onClick={signOut}>Sign out</button></div>
         </header>
 
-        <section ref={conversationRef} className={`${styles.conversation} ledgerlens-conversation`} aria-label="Revenue investigation chat">
-          {!hasConversation ? (
+        {activeView === "chat" ? <section ref={conversationRef} className={`${styles.conversation} ledgerlens-conversation`} aria-label="Revenue investigation chat" aria-busy={!chatsReady}>
+          {chatLoadError && <div className={styles.errorNotice} role="alert"><strong>Saved chats unavailable.</strong><span>{chatLoadError}</span></div>}
+          {hasConversation && demoOverview && <div className={styles.demoStrip} role="status"><span className={styles.demoTag}>TEST DATA</span><span>{demoOverview.counts.plans} plans · {demoOverview.counts.invoices} invoices · {demoOverview.counts.credit_memos} credit memos · {demoOverview.counts.sandbox_actions} sandbox actions</span><button onClick={() => submit("Check plan C-1001 for revenue leakage")} disabled={busy}>Try C-1001</button></div>}
+          {!chatsReady ? <div className={styles.welcome}><p className={styles.welcomeCopy}>Loading your saved investigations…</p></div> : !hasConversation ? (
             <div className={styles.welcome}>
               <div className={styles.eyebrow}><span className={styles.eyebrowLine} /> YOUR FINANCIAL DETECTIVE</div>
               <h1>Find what fell<br />through the <em>cracks.</em></h1>
               <p className={styles.welcomeCopy}>I’ll compare your billing plans with issued invoices, surface the evidence, and prepare safe corrections for your review.</p>
+              <section className={styles.demoPanel} aria-label="Demo dataset status">
+                <div className={styles.demoPanelTop}><span className={styles.demoIcon}>▦</span><div><strong>Sample billing dataset</strong><small>{demoOverview?.dataset_status === "ready" ? "Loaded from local demo fixtures" : "Checking local demo fixtures…"}</small></div><span className={styles.demoTag}>SANDBOX</span></div>
+                <div className={styles.demoCounts}>
+                  <div><strong>{demoOverview?.counts.plans ?? "—"}</strong><small>plans</small></div>
+                  <div><strong>{demoOverview?.counts.invoices ?? "—"}</strong><small>invoices</small></div>
+                  <div><strong>{demoOverview?.counts.credit_memos ?? "—"}</strong><small>credit memos</small></div>
+                  <div><strong>{demoOverview?.counts.sandbox_actions ?? "—"}</strong><small>applied actions</small></div>
+                </div>
+                {demoOverview && <div className={styles.demoCustomers}><span>Try a sample plan</span>{demoOverview.plans.map((plan) => <button key={plan.plan_id} onClick={() => submit(`Check plan ${plan.plan_id} for revenue leakage`)} disabled={busy} title={plan.customer_name}>{plan.plan_id}</button>)}</div>}
+              </section>
               <div className={styles.suggestions}>
                 {suggestions.map((suggestion) => <button className={styles.suggestion} key={suggestion.title} onClick={() => submit(suggestion.prompt)} disabled={busy}>
                   <span className={styles.suggestionIcon}>{suggestion.icon}</span><span><strong>{suggestion.title}</strong><small>{suggestion.prompt}</small></span><span className={styles.suggestionArrow}>↗</span>
@@ -176,25 +411,39 @@ export default function Chat() {
             </div>
           ) : (
             <div className={styles.thread}>
-              <div className={styles.threadHeading}><span className={styles.threadIcon}><SparkMark /></span><div><span>INVESTIGATION</span><h2>Billing review</h2></div></div>
+              <div className={styles.threadHeading}><span className={styles.threadIcon}><SparkMark /></span><div><span>INVESTIGATION</span><h2>{chats.find((chat) => chat.session_id === sessionId)?.title ?? "Billing review"}</h2></div></div>
               {messages.map((message) => {
                 const text = message.parts.find((part): part is TextUIPart => part.type === "text")?.text ?? "";
-                return <MessageBubble key={message.id} message={{ id: message.id, role: message.role as "user" | "assistant", content: text, tools: message.metadata?.tools_executed }} />;
+                return <MessageBubble key={message.id} message={{
+                  id: message.id,
+                  role: message.role as "user" | "assistant",
+                  content: text,
+                  tools: message.metadata?.tools_executed,
+                  toolCalls: message.metadata?.tool_calls,
+                }} />;
               })}
               {pendingApproval && <ApprovalCard details={pendingApproval} busy={approvalBusy} onApprove={() => void decideApproval(true)} onReject={() => void decideApproval(false)} />}
-              {busy && <div className={styles.thinking}><span className={styles.thinkingPulse} /><span>{approvalBusy ? "Recording your decision…" : "Reviewing billing records…"}</span></div>}
+              {(busy || liveToolProgress.length > 0) && <div className={styles.thinking} role="status" aria-live="polite">
+                <span className={styles.thinkingPulse} />
+                <div>
+                  <span>{approvalBusy ? "Recording your decision…" : liveToolProgress.some((tool) => tool.status === "started") ? "Investigating with tools…" : requestStarting ? "Connecting to the investigator…" : status === "submitted" ? "Understanding your request…" : "Preparing findings…"}</span>
+                  {liveToolProgress.length > 0 && <ul className={styles.liveToolList}>{liveToolProgress.map((tool) => <li key={tool.tool_run_id}><span>{tool.tool_name.replaceAll("_", " ")}</span><span>{tool.status === "started" ? "running" : tool.status}</span></li>)}</ul>}
+                </div>
+              </div>}
               {(error || approvalError) && <div className={styles.errorNotice} role="alert"><strong>Couldn’t complete that step.</strong><span>{approvalError ?? readableError(error)}</span><button onClick={() => { clearError(); setApprovalError(null); }}>Dismiss</button></div>}
             </div>
           )}
-        </section>
+        </section> : <section className={`${styles.workspaceView} ledgerlens-conversation`} aria-label={activeView === "billing" ? "Billing records" : "Activity log"}>
+          {activeView === "billing" ? <BillingDataView /> : <ActivityLogView />}
+        </section>}
 
-        <footer className={`${styles.composerArea} ledgerlens-composer`}>
+        {activeView === "chat" && <footer className={`${styles.composerArea} ledgerlens-composer`}>
           <form className={styles.composer} onSubmit={(event) => { event.preventDefault(); submit(); }}>
             <textarea value={input} onChange={(event) => setInput(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); submit(); } }} disabled={busy || !!pendingApproval} rows={1} aria-label="Ask LedgerLens" placeholder={pendingApproval ? "Review the proposed action above to continue" : "Ask about a plan, invoice, or billing discrepancy…"} />
             <div className={styles.composerBottom}><span><kbd>↵</kbd> to investigate <span className={styles.shortcutSep}>·</span> <kbd>⇧ ↵</kbd> for a new line</span><button type="submit" disabled={!input.trim() || busy || !!pendingApproval} aria-label="Send investigation"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 10h13M10 4l6 6-6 6" /></svg></button></div>
           </form>
           <p className={styles.footerNote}>LedgerLens can make mistakes. Verify financial actions before approval.</p>
-        </footer>
+        </footer>}
       </main>
     </div>
   );
