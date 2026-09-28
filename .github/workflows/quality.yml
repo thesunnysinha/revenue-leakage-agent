@@ -38,7 +38,7 @@ jobs:
         working-directory: services/agent
     steps:
       - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10
+      - uses: astral-sh/setup-uv@v10.2.0
         with:
           enable-cache: true
           cache-dependency-glob: services/agent/uv.lock
@@ -71,6 +71,7 @@ jobs:
           cache: npm
           cache-dependency-path: services/frontend/package-lock.json
       - run: npm ci
+      - run: npx next typegen
       - run: npx tsc --noEmit
       - run: npm run build
         env:

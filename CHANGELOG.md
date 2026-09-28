@@ -3,6 +3,7 @@
 ## [Unreleased]
 
 ### Fixed
+- GitHub Actions now pins the published `setup-uv` release and generates Next.js route/layout types before TypeScript checks
 - Added a visible, responsive demo sign-out action and a signed-out screen with a return path to saved investigations
 - Chat progress now streams actual tool start/completion/failure events instead of showing a static billing-review message for every prompt
 
