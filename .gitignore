@@ -1,2 +1,19 @@
 # Ignore prompts file
 prompts.md
+
+# Env secrets
+env/agent/.env
+env/frontend/.env.local
+
+# Python
+services/agent/.venv/
+services/agent/__pycache__/
+**/__pycache__/
+*.pyc
+
+# Node
+services/frontend/node_modules/
+services/frontend/.next/
+
+# Sandbox writes (keep .gitkeep)
+services/agent/data/sandbox/*.json
