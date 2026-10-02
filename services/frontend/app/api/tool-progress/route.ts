@@ -1,6 +1,9 @@
 import { BACKEND_URL, backendHeaders } from "@/lib/backend";
+import { requireApiSession } from "@/lib/session";
 
 export async function GET(request: Request) {
+  const authError = await requireApiSession();
+  if (authError) return authError;
   const sessionId = new URL(request.url).searchParams.get("sessionId");
   if (!sessionId) return Response.json({ message: "sessionId is required" }, { status: 400 });
 

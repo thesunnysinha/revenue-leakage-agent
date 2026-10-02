@@ -2,12 +2,14 @@
 
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport, type TextUIPart, type UIMessage } from "ai";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useChatStore } from "@/store/chat";
 import ApprovalCard from "./ApprovalCard";
 import ActivityLogView from "./ActivityLogView";
 import BillingDataView from "./BillingDataView";
 import MessageBubble from "./MessageBubble";
+import ApiKeyGate from "./ApiKeyGate";
 import styles from "./Chat.module.css";
 import type { ChatResponse, ChatSummary, ChatTranscript, ToolCallRecord } from "@/lib/api";
 
@@ -59,17 +61,18 @@ function SparkMark() {
 }
 
 export default function Chat() {
-  const { sessionId, chats, setChats, upsertChat, pendingApproval, setSessionId, setPendingApproval, clearApproval, resetSession } = useChatStore();
+  const router = useRouter();
+  const { sessionId, chats, setChats, upsertChat, pendingApproval, openaiApiKey, setOpenaiApiKey, setSessionId, setPendingApproval, clearApproval, resetSession } = useChatStore();
   const [input, setInput] = useState("");
   const [approvalBusy, setApprovalBusy] = useState(false);
   const [approvalError, setApprovalError] = useState<string | null>(null);
   const [chatLoadError, setChatLoadError] = useState<string | null>(null);
   const [chatsReady, setChatsReady] = useState(false);
-  const [signedOut, setSignedOut] = useState(false);
   const [requestStarting, setRequestStarting] = useState(false);
   const [liveToolProgress, setLiveToolProgress] = useState<LiveToolProgress[]>([]);
   const [demoOverview, setDemoOverview] = useState<DemoOverview | null>(null);
   const [activeView, setActiveView] = useState<WorkspaceView>("chat");
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const conversationRef = useRef<HTMLElement | null>(null);
   const progressStreamRef = useRef<EventSource | null>(null);
   const requestSentRef = useRef(false);
@@ -82,6 +85,12 @@ export default function Chat() {
   }, [setChats]);
   const transport = useMemo(() => new DefaultChatTransport({
     api: "/api/chat",
+    headers: () => {
+      const key = useChatStore.getState().openaiApiKey;
+      const headers: Record<string, string> = {};
+      if (key) headers["X-OpenAI-API-Key"] = key;
+      return headers;
+    },
     prepareSendMessagesRequest({ messages }) {
       const lastText = messages.at(-1)?.parts.find((part): part is TextUIPart => part.type === "text")?.text ?? "";
       return { body: { query: lastText, sessionId: useChatStore.getState().sessionId } };
@@ -160,18 +169,14 @@ export default function Chat() {
     clearApproval();
     setInput("");
     setActiveView("chat");
-    setSignedOut(false);
     setChatLoadError(null);
   }, [clearApproval, setMessages, setSessionId, upsertChat]);
 
   useEffect(() => {
     let cancelled = false;
+    if (!openaiApiKey) return () => { cancelled = true; };
     async function initializeChats() {
       try {
-        if (sessionStorage.getItem("ledgerlens-demo-signed-out") === "true") {
-          if (!cancelled) setSignedOut(true);
-          return;
-        }
         const savedChats = await refreshChats();
         if (cancelled) return;
         if (savedChats.length > 0) await loadChat(savedChats[0].session_id);
@@ -184,14 +189,14 @@ export default function Chat() {
     }
     void initializeChats();
     return () => { cancelled = true; };
-  }, [createNewChat, loadChat, refreshChats]);
+  }, [createNewChat, loadChat, openaiApiKey, refreshChats]);
 
   const busy = !chatsReady || requestStarting || status === "submitted" || status === "streaming" || approvalBusy;
   const hasConversation = messages.length > 0;
 
   function submit(query = input) {
     const value = query.trim();
-    if (!value || busy || !sessionId || pendingApproval) return;
+    if (!value || !openaiApiKey || busy || !sessionId || pendingApproval) return;
     clearError();
     setApprovalError(null);
     progressStreamRef.current?.close();
@@ -259,7 +264,7 @@ export default function Chat() {
     try {
       const res = await fetch("/api/approval", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "X-OpenAI-API-Key": openaiApiKey ?? "" },
         body: JSON.stringify({ session_id: sessionId, approved, reviewer_notes: "" }),
       });
       const result = await res.json() as ChatResponse & { message?: string };
@@ -289,50 +294,37 @@ export default function Chat() {
     }
   }
 
-  function signOut() {
-    sessionStorage.setItem("ledgerlens-demo-signed-out", "true");
+  async function signOut() {
+    await fetch("/api/auth/logout", { method: "POST" }).catch(() => undefined);
     progressStreamRef.current?.close();
     progressStreamRef.current = null;
     resetSession();
     setChats([]);
     setMessages([]);
     setLiveToolProgress([]);
-    setActiveView("chat");
-    setSignedOut(true);
+    router.replace("/login");
+    router.refresh();
   }
 
-  async function returnToDemo() {
-    sessionStorage.removeItem("ledgerlens-demo-signed-out");
-    setSignedOut(false);
-    setChatsReady(false);
-    try {
-      const savedChats = await refreshChats();
-      if (savedChats.length > 0) await loadChat(savedChats[0].session_id);
-      else await createNewChat();
-    } catch (cause) {
-      setChatLoadError(cause instanceof Error ? cause.message : "Could not reopen the demo workspace.");
-    } finally {
-      setChatsReady(true);
-    }
-  }
-
-  if (signedOut) {
-    return <main className={styles.signedOut}><div className={styles.signedOutCard}><SparkMark /><span className={styles.signedOutEyebrow}>LEDGERLENS DEMO</span><h1>You’re signed out</h1><p>Your saved investigations are still here. Re-enter the demo workspace whenever you’re ready.</p><button onClick={() => void returnToDemo()}>Return to demo</button></div></main>;
-  }
+  if (!openaiApiKey) return <ApiKeyGate />;
 
   return (
-    <div className={`${styles.shell} ledgerlens-shell`}>
+    <div className={`${styles.shell} ${sidebarCollapsed ? styles.collapsed : ""} ledgerlens-shell`}>
       <aside className={`${styles.rail} ledgerlens-rail`}>
-        <a className={styles.brand} href="#home" aria-label="LedgerLens home">
-          <SparkMark />
-          <span><strong>ledgerlens</strong><small>REVENUE INTELLIGENCE</small></span>
-        </a>
+        <div className={styles.railHeader}>
+          <a className={styles.brand} href="#home" aria-label="LedgerLens home">
+            <SparkMark />
+            <span><strong>ledgerlens</strong><small>REVENUE INTELLIGENCE</small></span>
+          </a>
+          <button className={styles.collapseButton} type="button" onClick={() => setSidebarCollapsed((collapsed) => !collapsed)} aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"} title={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}>
+            <span aria-hidden="true">{sidebarCollapsed ? "›" : "‹"}</span>
+          </button>
+        </div>
 
-        <div className={styles.workspaceLabel}>WORKSPACE</div>
-        <div className={styles.workspaceCard}>
-          <span className={styles.workspaceIcon}>D</span>
-          <span className={styles.workspaceText}><strong>LedgerLens Demo</strong><small>Sample finance workspace</small></span>
-          <span className={styles.chevron}>⌄</span>
+        <div className={`${styles.navGroup} ${styles.viewNav}`}>
+          <button title="Investigations" aria-label="Investigations" className={`${styles.navItem} ${activeView === "chat" ? styles.navActive : ""}`} onClick={() => setActiveView("chat")}><span>⌕</span><span className={styles.navLabel}>Investigations</span></button>
+          <button title="Billing data" aria-label="Billing data" className={`${styles.navItem} ${activeView === "billing" ? styles.navActive : ""}`} onClick={() => setActiveView("billing")}><span>▤</span><span className={styles.navLabel}>Billing data</span></button>
+          <button title="Activity log" aria-label="Activity log" className={`${styles.navItem} ${activeView === "activity" ? styles.navActive : ""}`} onClick={() => setActiveView("activity")}><span>◷</span><span className={styles.navLabel}>Activity log</span></button>
         </div>
 
         <div className={`${styles.navGroup} ${styles.viewNav}`}>
@@ -344,7 +336,7 @@ export default function Chat() {
 
         <div className={styles.navGroup}>
           <div className={styles.workspaceLabel}>RECENT CHATS</div>
-          <button className={`${styles.navItem} ${styles.newChatNav}`} onClick={() => void startNewInvestigation()} disabled={!chatsReady || busy}><span>＋</span> New chat</button>
+          <button className={`${styles.navItem} ${styles.newChatNav}`} title="New chat" aria-label="New chat" onClick={() => void startNewInvestigation()} disabled={!chatsReady || busy}><span>＋</span><span className={styles.navLabel}>New chat</span></button>
           <div className={styles.chatList}>
             {chats.map((chat) => <button
               className={`${styles.navItem} ${styles.chatEntry} ${chat.session_id === sessionId ? styles.navActive : ""}`}
@@ -352,6 +344,7 @@ export default function Chat() {
               onClick={() => void selectInvestigation(chat.session_id)}
               disabled={busy}
               title={chat.title}
+              aria-label={chat.title}
             ><span>◷</span><span className={styles.chatEntryTitle}>{chat.title}</span></button>)}
           </div>
         </div>
@@ -361,16 +354,16 @@ export default function Chat() {
             <span className={styles.sandboxDot} />
             <div><strong>Sandbox mode</strong><small>Changes need your approval</small></div>
           </div>
-          <div className={styles.profile}><span className={styles.avatar}>T</span><span><strong>Test reviewer</strong><small>Demo account</small></span></div>
+          <div className={styles.profile}><span className={styles.avatar}>D</span><span><strong>Demo reviewer</strong><small>Demo account</small></span></div>
         </div>
       </aside>
 
       <main className={`${styles.main} ledgerlens-main`} id="home">
         <header className={`${styles.topbar} ledgerlens-topbar`}>
-          <div className={styles.breadcrumb}><span>Workspace</span><i>/</i><strong>{activeView === "billing" ? "Billing data" : activeView === "activity" ? "Activity log" : "Investigations"}</strong></div>
+          <div className={styles.breadcrumb}><strong>{activeView === "billing" ? "Billing data" : activeView === "activity" ? "Activity log" : "Investigations"}</strong></div>
           <select
             className={styles.mobileChatSelect}
-            aria-label="Navigate workspace or switch investigation"
+            aria-label="Select a view or investigation"
             value={activeView === "chat" ? sessionId ?? "" : activeView}
             onChange={(event) => {
               if (event.target.value === "billing" || event.target.value === "activity") setActiveView(event.target.value);
@@ -381,7 +374,7 @@ export default function Chat() {
             <option value="billing">Billing data</option><option value="activity">Activity log</option>
             {chats.map((chat) => <option key={chat.session_id} value={chat.session_id}>{chat.title}</option>)}
           </select>
-          <div className={styles.topActions}><span className={styles.testBadge}>TEST ENVIRONMENT</span><span className={styles.online}><span /> Agent ready</span><button className={styles.newButton} onClick={() => void startNewInvestigation()} disabled={!chatsReady || busy}><span>＋</span> New investigation</button><button className={styles.logoutButton} onClick={signOut}>Sign out</button></div>
+          <div className={styles.topActions}><span className={styles.online}><span /> Agent ready</span><button className={styles.changeKeyButton} onClick={() => setOpenaiApiKey(null)}>Change key</button><button className={styles.logoutButton} onClick={signOut}>Sign out</button></div>
         </header>
 
         {activeView === "chat" ? <section ref={conversationRef} className={`${styles.conversation} ledgerlens-conversation`} aria-label="Revenue investigation chat" aria-busy={!chatsReady}>

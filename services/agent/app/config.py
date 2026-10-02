@@ -35,7 +35,6 @@ class ApplicationSettings(BaseSettings):
     port: int = Field(default=8000)
     reload: bool = Field(default=True)
 
-    openai_api_key: Optional[str] = Field(default=None, alias="OPENAI_API_KEY")
     model_name: str = Field(default="gpt-4o")
     model_provider: str = Field(default="openai")
     temperature: float = Field(default=0.0, ge=0.0, le=2.0)

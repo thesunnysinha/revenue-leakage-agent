@@ -3,17 +3,27 @@
 ## [Unreleased]
 
 ### Fixed
+- Added a sign-out action to the reconnect-key screen that clears the session and in-memory chat state
+- Replaced the README with product-focused LedgerLens overview and setup documentation
+- Prevented demo users from sharing a server-side OpenAI key: request-scoped keys are held in tab memory and passed through LangGraph runtime context without persistence
+- Removed the TEST ENVIRONMENT tag from the chat top bar
+- Removed the duplicate New investigation button from the top navigation; the sidebar New chat action remains
+- Removed the redundant demo workspace selector and workspace labels from the chat navigation/header
 - GitHub Actions now pins the published `setup-uv` release and generates Next.js route/layout types before TypeScript checks
-- Added a visible, responsive demo sign-out action and a signed-out screen with a return path to saved investigations
+- Replaced the sessionStorage-only sign-out screen with a real cookie-backed login and logout flow
 - Chat progress now streams actual tool start/completion/failure events instead of showing a static billing-review message for every prompt
 
 ### Changed
+- Added a responsive login-page architecture diagram showing request routing, data stores, and the human approval gate
+- Added a collapsible desktop sidebar and a per-visitor OpenAI key prompt on login; changing the key or signing out clears the in-memory value
 - Expanded root ignore rules for local env/secrets, Python and frontend caches/builds, coverage, logs, and OS/editor artifacts while keeping env templates trackable
 - Removed the broken `run.py test` command, which referenced a missing smoke-test script
 - Removed tracked macOS `.DS_Store` artifacts and ignored future copies
 - Added Docker first-run setup, service URLs, logs, hot-reload, and persistent-data instructions to project guidance
 
 ### Added
+- LedgerLens login page with development-only sample credentials, signed HTTP-only sessions, a protected server component, and session checks on all frontend data proxy routes
+- Root `DESIGN.md` with an attributed financial-product design reference and LedgerLens-specific adoption guidance
 - SQLAlchemy ORM-backed chat sessions, transcripts, approval decisions, and LangGraph checkpoints; Alembic applies versioned schema migrations at API startup, and the UI can create, list, switch, and restore investigations
 - Revenue Leakage Agent (LangGraph + FastAPI + Next.js)
 - 8 domain tools: `load_plan`, `query_invoices`, `fx_convert`, `propose_make_good_invoice`, `propose_credit_memo`, `propose_plan_amendment`, `apply`, `rollback`

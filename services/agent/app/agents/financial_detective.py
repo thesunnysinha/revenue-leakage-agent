@@ -6,12 +6,13 @@ from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, Remove
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.errors import GraphRecursionError
 from langgraph.graph import StateGraph, START, END
+from langgraph.runtime import Runtime
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.prebuilt import ToolNode
 from langgraph.types import Command, interrupt
 
 from app.agents.base import AgentResult, BaseAgent
-from app.agents.state import AgentState
+from app.agents.state import AgentContext, AgentState
 from app.core.llm import build_chat_model
 from app.core.telemetry import get_logger, trace_context, tracing_callbacks
 from app.core.tool_logging import ToolCallLoggingHandler
@@ -69,7 +70,7 @@ class FinancialDetective(BaseAgent):
 
     # ---- nodes -----------------------------------------------------------------------
 
-    async def _agent_node(self, state: AgentState) -> Dict[str, Any]:
+    async def _agent_node(self, state: AgentState, runtime: Runtime[AgentContext]) -> Dict[str, Any]:
         messages = list(state["messages"])
         turn = current_turn(messages)
         step_count = state.get("step_count", 0) + 1
@@ -78,7 +79,10 @@ class FinancialDetective(BaseAgent):
             logger.warning("agent.loop.halted", step_count=step_count)
             return {"step_count": step_count, "loop_detected": True}
 
-        response = await self._llm_with_tools.ainvoke([SystemMessage(content=self._system_prompt), *messages])
+        llm_with_tools = self._llm_with_tools
+        if self._llm is None:
+            llm_with_tools = build_chat_model(runtime.context["openai_api_key"]).bind_tools(REGISTERED_TOOLS)
+        response = await llm_with_tools.ainvoke([SystemMessage(content=self._system_prompt), *messages])
 
         reasons: List[str] = []
         calls: List[Dict[str, Any]] = []
@@ -174,9 +178,9 @@ class FinancialDetective(BaseAgent):
     # ---- graph -----------------------------------------------------------------------
 
     def compile(self) -> CompiledStateGraph:
-        self._llm_with_tools = (self._llm or build_chat_model()).bind_tools(REGISTERED_TOOLS)
+        self._llm_with_tools = self._llm.bind_tools(REGISTERED_TOOLS) if self._llm is not None else None
 
-        builder = StateGraph(AgentState)
+        builder = StateGraph(AgentState, context_schema=AgentContext)
         builder.add_node("agent", self._agent_node, timeout=self.NODE_TIMEOUT_SECONDS)
         builder.add_node("fallback", self._fallback_node)
         builder.add_node("approval_gate", self._approval_node, destinations=("tools", END))
@@ -225,7 +229,9 @@ class FinancialDetective(BaseAgent):
             raise GraphUninitializedError()
         return self._compiled_graph
 
-    async def execute(self, query: str, session_id: str, trace_id: str, progress_callback: Optional[Callable[[str, str, str], None]] = None) -> AgentResult:
+    async def execute(
+        self, query: str, session_id: str, trace_id: str, openai_api_key: str, progress_callback: Optional[Callable[[str, str, str], None]] = None
+    ) -> AgentResult:
         graph = self._require_graph()
         cfg = self._thread_config(session_id)
         snapshot = await graph.aget_state(cfg)
@@ -240,9 +246,9 @@ class FinancialDetective(BaseAgent):
             "verify_attempts": 0,
             "ungrounded_values": [],
         }
-        return await self._run(graph, initial, cfg, trace_id, progress_callback=progress_callback)
+        return await self._run(graph, initial, cfg, trace_id, openai_api_key, progress_callback=progress_callback)
 
-    async def resume_approval(self, session_id: str, approved: bool, notes: Optional[str], trace_id: str) -> AgentResult:
+    async def resume_approval(self, session_id: str, approved: bool, notes: Optional[str], trace_id: str, openai_api_key: str) -> AgentResult:
         graph = self._require_graph()
         cfg = self._thread_config(session_id)
         snapshot = await graph.aget_state(cfg)
@@ -254,6 +260,7 @@ class FinancialDetective(BaseAgent):
             Command(resume={"approved": approved, "notes": notes}),
             cfg,
             trace_id,
+            openai_api_key,
             completed_tool_call_ids=completed_tool_call_ids,
         )
 
@@ -263,6 +270,7 @@ class FinancialDetective(BaseAgent):
         graph_input: Any,
         cfg: Dict[str, Any],
         trace_id: str,
+        openai_api_key: str,
         completed_tool_call_ids: Optional[set[str]] = None,
         progress_callback: Optional[Callable[[str, str, str], None]] = None,
     ) -> AgentResult:
@@ -274,13 +282,13 @@ class FinancialDetective(BaseAgent):
         }
         try:
             with trace_context(session_id, trace_id):
-                result = await graph.ainvoke(graph_input, config=run_config)
+                result = await graph.ainvoke(graph_input, config=run_config, context={"openai_api_key": openai_api_key})
         except GraphRecursionError as exc:
             raise LoopBreakerError(reason=f"recursion limit of {self.RECURSION_LIMIT} reached") from exc
         except AgentServiceError:
             raise
         except Exception as exc:
-            logger.error("agent.model.invocation_failed", error_type=type(exc).__name__, exc_info=True)
+            logger.error("agent.model.invocation_failed", error_type=type(exc).__name__)
             from app.config import config as app_config
 
             raise ProviderModelError(

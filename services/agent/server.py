@@ -10,7 +10,7 @@ from typing import AsyncGenerator, Dict, Optional, Type
 
 import structlog
 import uvicorn
-from fastapi import Depends, FastAPI, Request, Response, status
+from fastapi import Depends, FastAPI, Header, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, RedirectResponse, StreamingResponse
 
@@ -120,8 +120,8 @@ class ServerApplication:
                 response.headers["X-Process-Time-MS"] = f"{duration:.2f}"
                 logger.info("request.completed", status_code=response.status_code, duration_ms=round(duration, 2))
                 return response
-            except Exception:
-                logger.error("request.failed", exc_info=True)
+            except Exception as exc:
+                logger.error("request.failed", error_type=type(exc).__name__)
                 raise
             finally:
                 structlog.contextvars.clear_contextvars()
@@ -192,7 +192,9 @@ class ServerApplication:
             return chat
 
         @self.app.post("/api/v1/agent/chat", response_model=ChatResponse, tags=["Operations"], dependencies=[Depends(require_backend_auth)])
-        async def chat_endpoint(payload: ChatRequest, request: Request) -> ChatResponse:
+        async def chat_endpoint(
+            payload: ChatRequest, request: Request, x_openai_api_key: str = Header(alias="X-OpenAI-API-Key", min_length=20, max_length=512)
+        ) -> ChatResponse:
             trace_id: str = getattr(request.state, "trace_id", str(uuid.uuid4()))
             session_id = payload.session_id
             validated = self.security_guardrail.evaluate(payload.query)
@@ -218,6 +220,7 @@ class ServerApplication:
                 query=sanitized,
                 session_id=session_id,
                 trace_id=trace_id,
+                openai_api_key=x_openai_api_key,
                 progress_callback=publish_tool_progress,
             )
             await self.chat_repository.append_turn(
@@ -256,7 +259,9 @@ class ServerApplication:
             )
 
         @self.app.post("/api/v1/agent/approval", response_model=ChatResponse, tags=["HITL"], dependencies=[Depends(require_backend_auth)])
-        async def handle_approval(payload: HumanApprovalRequest, request: Request) -> ChatResponse:
+        async def handle_approval(
+            payload: HumanApprovalRequest, request: Request, x_openai_api_key: str = Header(alias="X-OpenAI-API-Key", min_length=20, max_length=512)
+        ) -> ChatResponse:
             trace_id: str = getattr(request.state, "trace_id", str(uuid.uuid4()))
             structlog.contextvars.bind_contextvars(session_id=payload.session_id)
             logger.info("agent.approval.decision", approved=payload.approved)
@@ -268,6 +273,16 @@ class ServerApplication:
                 approved=payload.approved,
                 notes=payload.reviewer_notes,
                 trace_id=trace_id,
+                openai_api_key=x_openai_api_key,
+            )
+            await self.chat_repository.append_approval_turn(
+                session_id=payload.session_id,
+                approved=payload.approved,
+                reviewer_notes=payload.reviewer_notes,
+                assistant_content=result.response,
+                tools_executed=result.tools_executed,
+                pending_approval_details=result.pending_action,
+                tool_calls=result.tool_calls,
             )
             await self.chat_repository.append_approval_turn(
                 session_id=payload.session_id,

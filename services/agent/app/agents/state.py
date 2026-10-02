@@ -13,3 +13,9 @@ class AgentState(TypedDict):
     pending_action: Optional[Dict[str, Any]]
     verify_attempts: int
     ungrounded_values: List[str]
+
+
+class AgentContext(TypedDict):
+    """Per-invocation secrets and settings; never persisted in graph state."""
+
+    openai_api_key: str
