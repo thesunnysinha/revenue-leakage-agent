@@ -79,7 +79,12 @@ export default function LoginForm({ demoCredentials }: { demoCredentials: Creden
               <dl><div><dt>Username</dt><dd>{demoCredentials.username}</dd></div><div><dt>Password</dt><dd>{demoCredentials.password}</dd></div></dl>
             </aside>
           )}
-          <p className={styles.footer}>Sandbox environment · Sample billing data</p>
+          <p className={styles.footer}>
+            <span>Sandbox environment · Sample billing data</span>
+            <a href="https://github.com/thesunnysinha/revenue-leakage-agent" target="_blank" rel="noopener noreferrer">
+              View on GitHub <span aria-hidden="true">↗</span>
+            </a>
+          </p>
         </section>
 
         <aside className={styles.architecture} aria-labelledby="architecture-title">

@@ -14,6 +14,7 @@
 - Chat progress now streams actual tool start/completion/failure events instead of showing a static billing-review message for every prompt
 
 ### Changed
+- Added a public GitHub repository link to the login page
 - Expanded the login architecture diagram with the tool loop, named guardrails, apply/rollback approval outcomes, and groundedness retry
 - Added a collapsible desktop sidebar and a per-visitor OpenAI key prompt on login; changing the key or signing out clears the in-memory value
 - Expanded root ignore rules for local env/secrets, Python and frontend caches/builds, coverage, logs, and OS/editor artifacts while keeping env templates trackable
