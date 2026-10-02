@@ -89,7 +89,7 @@ export default function LoginForm({ demoCredentials }: { demoCredentials: Creden
 
         <aside className={styles.architecture} aria-labelledby="architecture-title">
           <div className={styles.architectureIntro}>
-            <span className={styles.eyebrow}>FINANCIAL DETECTIVE · LANGGRAPH</span>
+            <span className={styles.eyebrow}>Financial detective · LangGraph</span>
             <h2 id="architecture-title">Inside an investigation</h2>
             <p>See how tool calls, guardrails, verification, and your approval fit into one agent run.</p>
           </div>
@@ -113,7 +113,7 @@ export default function LoginForm({ demoCredentials }: { demoCredentials: Creden
           <div className={styles.agentPaths}>
             <section className={styles.loopDiagram} aria-labelledby="tool-loop-title">
               <div className={styles.sectionHeading}>
-                <span className={styles.loopLabel}>READ + DRAFT PATH</span>
+                <span className={styles.loopLabel}>Read and draft tools</span>
                 <strong id="tool-loop-title">Agent ↔ ToolNode</strong>
               </div>
               <div className={styles.loopNodes}>
@@ -134,7 +134,7 @@ export default function LoginForm({ demoCredentials }: { demoCredentials: Creden
             <section className={styles.approvalFlow} aria-labelledby="write-gate-title">
               <span className={styles.approvalGlyph} aria-hidden="true">Ⅱ</span>
               <div className={styles.writeContent}>
-                <span className={styles.loopLabel}>WRITE PATH · HUMAN APPROVAL REQUIRED</span>
+                <span className={styles.loopLabel}>Write path · approval required</span>
                 <strong id="write-gate-title">apply(draft) or rollback(action_id)</strong>
                 <p><code>ApprovalPolicyGuardrail</code> catches either write → LangGraph <code>interrupt()</code> pauses and shows the action in chat.</p>
                 <div className={styles.approvalOutcomes}>
