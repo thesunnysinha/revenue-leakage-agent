@@ -84,44 +84,67 @@ export default function LoginForm({ demoCredentials }: { demoCredentials: Creden
 
         <aside className={styles.architecture} aria-labelledby="architecture-title">
           <div className={styles.architectureIntro}>
-            <span className={styles.eyebrow}>THE AI INVESTIGATION LOOP</span>
-            <h2 id="architecture-title">How the AI investigates</h2>
-            <p>LangGraph runs a tool-use loop: the model gathers billing evidence, checks its findings, and answers with support.</p>
+            <span className={styles.eyebrow}>FINANCIAL DETECTIVE · LANGGRAPH</span>
+            <h2 id="architecture-title">Inside an investigation</h2>
+            <p>See how tool calls, guardrails, verification, and your approval fit into one agent run.</p>
           </div>
           <ol className={styles.flow} aria-label="AI investigation steps">
             <li className={styles.flowQuestion}>
               <span className={styles.flowIndex}>01</span>
-              <strong>Question</strong>
-              <small>Ask about a plan or invoice</small>
+              <strong>Your question</strong>
+              <small>Plan, invoice, or action</small>
             </li>
-            <li className={styles.flowReason}>
+            <li className={styles.flowInput}>
               <span className={styles.flowIndex}>02</span>
-              <strong>Agent reasoning</strong>
-              <small>OpenAI chooses a next step</small>
+              <strong>Input guardrails</strong>
+              <small>Block injection; redact PII</small>
             </li>
-            <li className={styles.flowVerify}>
+            <li className={styles.flowAgent}>
               <span className={styles.flowIndex}>03</span>
-              <strong>Verify &amp; answer</strong>
-              <small>Grounds numbers; retries once if needed</small>
+              <strong>Agent node</strong>
+              <small>OpenAI chooses a tool or answer</small>
             </li>
           </ol>
-          <div className={styles.loopDiagram} aria-label="Agent and tool reasoning loop">
-            <span className={styles.loopLabel}>REASONING LOOP</span>
-            <div className={styles.loopNodes}>
-              <div className={styles.loopNode}><strong>Agent</strong><small>chooses a tool</small></div>
-              <div className={styles.loopArrows} aria-label="Tool call goes out; evidence returns">
-                <span>tool call <b aria-hidden="true">→</b></span>
-                <span><b aria-hidden="true">←</b> evidence</span>
+          <div className={styles.agentPaths}>
+            <section className={styles.loopDiagram} aria-labelledby="tool-loop-title">
+              <div className={styles.sectionHeading}>
+                <span className={styles.loopLabel}>READ + DRAFT PATH</span>
+                <strong id="tool-loop-title">Agent ↔ ToolNode</strong>
               </div>
-              <div className={styles.loopNode}><strong>Billing tool</strong><small>reads records</small></div>
-            </div>
-            <p>Evidence returns to the agent. It can repeat with another tool until ready to answer; a loop guard stops repeats.</p>
+              <div className={styles.loopNodes}>
+                <div className={styles.loopNode}><strong>Agent</strong><small>chooses a tool call</small></div>
+                <div className={styles.loopArrows} aria-label="Tool call goes out; result returns">
+                  <span>tool call <b aria-hidden="true">→</b></span>
+                  <span><b aria-hidden="true">←</b> result</span>
+                </div>
+                <div className={styles.loopNode}><strong>ToolNode</strong><small>runs the tool</small></div>
+              </div>
+              <div className={styles.toolGroups}>
+                <p><strong>Read</strong><span><code>load_plan</code><code>query_invoices</code><code>fx_convert</code></span></p>
+                <p><strong>Draft only</strong><span><code>propose_make_good_invoice</code><code>propose_credit_memo</code><code>propose_plan_amendment</code></span></p>
+              </div>
+              <p className={styles.pathNote}>Results return to the model for another step. Tool calls and outcomes are logged in chat.</p>
+              <p className={styles.guardrailNote}><strong>LoopGuardrail:</strong> caps the run at 8 agent steps, blocks repeated calls, then routes to a safe fallback.</p>
+            </section>
+            <section className={styles.approvalFlow} aria-labelledby="write-gate-title">
+              <span className={styles.approvalGlyph} aria-hidden="true">Ⅱ</span>
+              <div className={styles.writeContent}>
+                <span className={styles.loopLabel}>WRITE PATH · HUMAN APPROVAL REQUIRED</span>
+                <strong id="write-gate-title">apply(draft) or rollback(action_id)</strong>
+                <p><code>ApprovalPolicyGuardrail</code> catches either write → LangGraph <code>interrupt()</code> pauses and shows the action in chat.</p>
+                <div className={styles.approvalOutcomes}>
+                  <p><strong>Approve</strong><span><code>Command(resume)</code> continues; ToolNode runs the write.</span></p>
+                  <p><strong>Reject</strong><span>Graph ends; the write tool never runs.</span></p>
+                </div>
+                <p className={styles.pathNote}>Apply adds the approved draft to the sandbox. Rollback removes that action by ID. Both are written to the audit log.</p>
+              </div>
+            </section>
           </div>
-          <div className={styles.approvalFlow}>
-            <span className={styles.approvalGlyph} aria-hidden="true">Ⅱ</span>
-            <p><strong>Write actions pause for you</strong><span>Draft a correction → agent pauses → you approve or reject → only approval can apply it to the sandbox.</span></p>
+          <div className={styles.verifyFlow}>
+            <span className={styles.verifyMark} aria-hidden="true">✓</span>
+            <p><strong>GroundednessGuardrail · before the answer</strong><span>Checks amounts and IDs against tool results. If unsupported, the agent retries once; unsupported claims are withheld.</span></p>
           </div>
-          <p className={styles.keyNote}>Your API key powers the OpenAI reasoning calls and is not saved with chats.</p>
+          <p className={styles.keyNote}>Your API key powers OpenAI calls and is not saved with chats.</p>
         </aside>
       </div>
     </main>
