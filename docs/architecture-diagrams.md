@@ -25,7 +25,7 @@ flowchart TD
 
     subgraph Guardrails applied inside agent node
         AG[ApprovalPolicyGuardrail\nblocks apply · rollback]
-        LG[LoopGuardrail\nmax 10 steps · detects repeated calls]
+        LG[LoopGuardrail\nmax 8 agent steps · blocks repeated calls]
         GG[GroundednessGuardrail\nrejects hallucinated figures]
     end
 ```

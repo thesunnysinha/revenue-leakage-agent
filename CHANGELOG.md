@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Changed
+- Redesigned the login page with a clearer LedgerLens sign-in surface and a higher-contrast agent workflow diagram, including a distinct human-approval checkpoint and improved responsive typography
+- Added GitHub-renderable Mermaid diagrams and an accurate tools, guardrails, retry, and approval overview to the README
+
 ### Fixed
 - Added a sign-out action to the reconnect-key screen that clears the session and in-memory chat state
 - Replaced the README with product-focused LedgerLens overview and setup documentation
