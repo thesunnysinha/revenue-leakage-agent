@@ -24,8 +24,9 @@ python run.py check           # run Ruff and pytest
 cp env/agent/.env.example env/agent/.env
 cp env/frontend/.env.local.example env/frontend/.env.local
 python -c "import secrets; print(secrets.token_urlsafe(48))"
-# Set OPENAI_API_KEY and BACKEND_API_TOKEN in env/agent/.env.
+# Set BACKEND_API_TOKEN in env/agent/.env.
 # Set the same BACKEND_API_TOKEN in env/frontend/.env.local.
+# Each visitor enters their own OpenAI API key on the login page; it stays in tab memory.
 python run.py docker up
 ```
 
@@ -33,7 +34,7 @@ Open the app at **http://localhost:3000**. Backend health is at **http://localho
 
 **Local FastAPI dev** (without Docker):
 ```bash
-# 1. Copy env/agent/.env.example → env/agent/.env and fill OPENAI_API_KEY + DATA_DIR
+# 1. Copy env/agent/.env.example → env/agent/.env and fill DATA_DIR (the OpenAI key is entered in the UI)
 # 2. Start the PostgreSQL dependency (data survives docker compose down)
 docker compose up -d postgres
 python run.py sync
@@ -107,13 +108,15 @@ agent → verify         (plain text response)
 - `LoopGuardrail` — counts steps and detects repeated identical tool calls
 - `GroundednessGuardrail` — called in `_verify_node`; finds values in the LLM's response that have no matching source in tool results
 
-**Config** (`app/config.py`): `pydantic-settings` singleton. `_find_env_file()` walks parent directories to find `env/agent/.env`. Key fields: `openai_api_key`, `model_name`, `model_provider`, `data_dir`.
+**Config** (`app/config.py`): `pydantic-settings` singleton. `_find_env_file()` walks parent directories to find `env/agent/.env`. The model name/provider and data path are server settings; each visitor supplies an OpenAI key in the UI, forwarded only for that invocation in `X-OpenAI-API-Key` and passed as LangGraph runtime context. The key is not part of graph state, persisted chat data, or server configuration.
 
 **Exceptions → HTTP status** (`server.py:ERROR_STATUS`): each custom exception class maps to a specific HTTP code (`GuardrailViolationError → 400`, `ApprovalPendingError → 409`, `GraphUninitializedError → 503`, etc.).
 
 ### Frontend: `services/frontend/`
 
 Next.js 16 App Router. **Important:** Next.js 16 has breaking API changes — read `node_modules/next/dist/docs/` before writing any Next.js-specific code (see `AGENTS.md`).
+
+Before making visual changes, read the root `DESIGN.md`. Its LedgerLens adoption notes preserve the product's current identity while using the imported design analysis as a reference.
 
 **State split:**
 - `useChat` (AI SDK v7) manages the message array and streaming

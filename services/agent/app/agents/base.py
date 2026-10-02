@@ -26,11 +26,13 @@ class BaseAgent(ABC):
         pass
 
     @abstractmethod
-    async def execute(self, query: str, session_id: str, trace_id: str, progress_callback: Optional[Callable[[str, str, str], None]] = None) -> AgentResult:
+    async def execute(
+        self, query: str, session_id: str, trace_id: str, openai_api_key: str, progress_callback: Optional[Callable[[str, str, str], None]] = None
+    ) -> AgentResult:
         pass
 
     @abstractmethod
-    async def resume_approval(self, session_id: str, approved: bool, notes: Optional[str], trace_id: str) -> AgentResult:
+    async def resume_approval(self, session_id: str, approved: bool, notes: Optional[str], trace_id: str, openai_api_key: str) -> AgentResult:
         pass
 
     async def startup(self, database_url: str) -> None:
