@@ -14,7 +14,7 @@
 - Chat progress now streams actual tool start/completion/failure events instead of showing a static billing-review message for every prompt
 
 ### Changed
-- Reframed the login-page diagram around the LangGraph reasoning/tool loop, evidence verification, and human approval gate
+- Drew the login-page agent↔tool↔agent reasoning cycle explicitly, with verification retries and the human approval gate
 - Added a collapsible desktop sidebar and a per-visitor OpenAI key prompt on login; changing the key or signing out clears the in-memory value
 - Expanded root ignore rules for local env/secrets, Python and frontend caches/builds, coverage, logs, and OS/editor artifacts while keeping env templates trackable
 - Removed the broken `run.py test` command, which referenced a missing smoke-test script

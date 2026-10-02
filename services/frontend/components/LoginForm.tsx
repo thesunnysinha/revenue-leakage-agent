@@ -97,22 +97,25 @@ export default function LoginForm({ demoCredentials }: { demoCredentials: Creden
             <li className={styles.flowReason}>
               <span className={styles.flowIndex}>02</span>
               <strong>Agent reasoning</strong>
-              <small>OpenAI selects a tool or answer</small>
-            </li>
-            <li className={styles.flowTools}>
-              <span className={styles.flowIndex}>03</span>
-              <strong>Read tools</strong>
-              <small>Plans, invoices, credits and FX</small>
+              <small>OpenAI chooses a next step</small>
             </li>
             <li className={styles.flowVerify}>
-              <span className={styles.flowIndex}>04</span>
+              <span className={styles.flowIndex}>03</span>
               <strong>Verify &amp; answer</strong>
-              <small>Check amounts against tool evidence</small>
+              <small>Grounds numbers; retries once if needed</small>
             </li>
           </ol>
-          <div className={styles.reasoningLoop}>
-            <span className={styles.loopGlyph} aria-hidden="true">↶</span>
-            <p><strong>Tool results return to the agent.</strong><span>It can reason and call another tool before answering. A loop guard stops repeated calls.</span></p>
+          <div className={styles.loopDiagram} aria-label="Agent and tool reasoning loop">
+            <span className={styles.loopLabel}>REASONING LOOP</span>
+            <div className={styles.loopNodes}>
+              <div className={styles.loopNode}><strong>Agent</strong><small>chooses a tool</small></div>
+              <div className={styles.loopArrows} aria-label="Tool call goes out; evidence returns">
+                <span>tool call <b aria-hidden="true">→</b></span>
+                <span><b aria-hidden="true">←</b> evidence</span>
+              </div>
+              <div className={styles.loopNode}><strong>Billing tool</strong><small>reads records</small></div>
+            </div>
+            <p>Evidence returns to the agent. It can repeat with another tool until ready to answer; a loop guard stops repeats.</p>
           </div>
           <div className={styles.approvalFlow}>
             <span className={styles.approvalGlyph} aria-hidden="true">Ⅱ</span>
