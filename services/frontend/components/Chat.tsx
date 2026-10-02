@@ -327,6 +327,13 @@ export default function Chat() {
           <button title="Activity log" aria-label="Activity log" className={`${styles.navItem} ${activeView === "activity" ? styles.navActive : ""}`} onClick={() => setActiveView("activity")}><span>◷</span><span className={styles.navLabel}>Activity log</span></button>
         </div>
 
+        <div className={`${styles.navGroup} ${styles.viewNav}`}>
+          <div className={styles.workspaceLabel}>WORKSPACE</div>
+          <button className={`${styles.navItem} ${activeView === "chat" ? styles.navActive : ""}`} onClick={() => setActiveView("chat")}><span>⌕</span> Investigations</button>
+          <button className={`${styles.navItem} ${activeView === "billing" ? styles.navActive : ""}`} onClick={() => setActiveView("billing")}><span>▤</span> Billing data</button>
+          <button className={`${styles.navItem} ${activeView === "activity" ? styles.navActive : ""}`} onClick={() => setActiveView("activity")}><span>◷</span> Activity log</button>
+        </div>
+
         <div className={styles.navGroup}>
           <div className={styles.workspaceLabel}>RECENT CHATS</div>
           <button className={`${styles.navItem} ${styles.newChatNav}`} title="New chat" aria-label="New chat" onClick={() => void startNewInvestigation()} disabled={!chatsReady || busy}><span>＋</span><span className={styles.navLabel}>New chat</span></button>

@@ -284,6 +284,15 @@ class ServerApplication:
                 pending_approval_details=result.pending_action,
                 tool_calls=result.tool_calls,
             )
+            await self.chat_repository.append_approval_turn(
+                session_id=payload.session_id,
+                approved=payload.approved,
+                reviewer_notes=payload.reviewer_notes,
+                assistant_content=result.response,
+                tools_executed=result.tools_executed,
+                pending_approval_details=result.pending_action,
+                tool_calls=result.tool_calls,
+            )
             return self._to_response(result, payload.session_id, trace_id, (time.perf_counter() - start) * 1000)
 
         @self.app.get("/api/v1/demo/overview", tags=["Demo"], dependencies=[Depends(require_backend_auth)])
