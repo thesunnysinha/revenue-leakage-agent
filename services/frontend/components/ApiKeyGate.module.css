@@ -14,6 +14,10 @@
 .submit:hover { background:#285b45; }
 .submit:focus-visible,.secretField button:focus-visible { outline:2px solid #4c8b68; outline-offset:2px; }
 .error { color:#a45544; font-size:10px; }
+.signOut { display:block; margin:15px auto 0; padding:8px 12px; border:0; border-radius:6px; color:#758078; background:transparent; font:550 10px var(--font-geist-sans),sans-serif; cursor:pointer; }
+.signOut:hover:not(:disabled) { color:#355a46; background:#f2f6f1; }
+.signOut:disabled { opacity:.6; cursor:wait; }
+.signOut:focus-visible { outline:2px solid #4c8b68; outline-offset:2px; }
 .privacy { margin-top:20px; padding:12px; border:1px solid #e4eadf; border-radius:8px; background:#f7f9f5; }
 .privacy strong { color:#46584b; font-size:10px; }
 .privacy p { margin-top:5px; color:#79877d; font-size:9px; line-height:1.6; }

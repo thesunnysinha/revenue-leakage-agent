@@ -1,13 +1,16 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 import { useChatStore } from "@/store/chat";
 import styles from "./ApiKeyGate.module.css";
 
 export default function ApiKeyGate() {
+  const router = useRouter();
   const [apiKey, setApiKey] = useState("");
   const [showKey, setShowKey] = useState(false);
   const [error, setError] = useState("");
+  const [signingOut, setSigningOut] = useState(false);
 
   function connect(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -17,6 +20,24 @@ export default function ApiKeyGate() {
       return;
     }
     useChatStore.getState().setOpenaiApiKey(key);
+  }
+
+  async function signOut() {
+    setSigningOut(true);
+    setError("");
+    try {
+      const response = await fetch("/api/auth/logout", { method: "POST" });
+      if (!response.ok) throw new Error("Could not sign out. Please try again.");
+      const store = useChatStore.getState();
+      store.resetSession();
+      store.setChats([]);
+      router.replace("/login");
+      router.refresh();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not sign out. Please try again.");
+    } finally {
+      setSigningOut(false);
+    }
   }
 
   return (
@@ -39,6 +60,9 @@ export default function ApiKeyGate() {
           <strong>Private to this tab</strong>
           <p>The key is not written to browser storage, chat history, logs, or the database. It is sent to the agent service only with your requests, and is not shared with other visitors.</p>
         </div>
+        <button className={styles.signOut} type="button" onClick={() => void signOut()} disabled={signingOut}>
+          {signingOut ? "Signing out…" : "Sign out"}
+        </button>
       </section>
     </main>
   );

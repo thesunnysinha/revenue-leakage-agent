@@ -3,6 +3,7 @@
 ## [Unreleased]
 
 ### Fixed
+- Added a sign-out action to the reconnect-key screen that clears the session and in-memory chat state
 - Replaced the README with product-focused LedgerLens overview and setup documentation
 - Prevented demo users from sharing a server-side OpenAI key: request-scoped keys are held in tab memory and passed through LangGraph runtime context without persistence
 - Removed the TEST ENVIRONMENT tag from the chat top bar
