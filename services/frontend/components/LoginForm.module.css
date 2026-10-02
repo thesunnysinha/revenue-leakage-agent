@@ -33,7 +33,10 @@
 .demo dl>div { min-width:0; padding:8px; border:1px solid #e8ede6; border-radius:6px; background:#fff; }
 .demo dt { color:#98a198; font-size:8px; }
 .demo dd { overflow-wrap:anywhere; margin-top:4px; color:#43574a; font:600 10px var(--font-geist-mono),monospace; }
-.footer { margin-top:20px; color:#a0aaa2; font-size:8px; text-align:center; }
+.footer { display:flex; flex-wrap:wrap; align-items:center; justify-content:center; gap:7px; margin-top:20px; color:#a0aaa2; font-size:8px; text-align:center; }
+.footer a { color:#557560; font-weight:650; text-decoration:none; }
+.footer a:hover { text-decoration:underline; }
+.footer a:focus-visible { border-radius:2px; outline:2px solid #4c8b68; outline-offset:2px; }
 @media (max-width:480px) { .card { padding:26px 22px; }.intro { margin-top:30px; }.intro h1 { font-size:29px; } }
 
 .layout { display:grid; width:min(1260px,100%); grid-template-columns:minmax(340px,390px) minmax(0,1fr); align-items:center; gap:24px; }
