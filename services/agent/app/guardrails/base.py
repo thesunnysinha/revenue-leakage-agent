@@ -1,9 +1,5 @@
 from __future__ import annotations
-from abc import ABC, abstractmethod
-from typing import Any
 
+from shared.services.agent.guardrails.base import BaseGuardrail
 
-class BaseGuardrail(ABC):
-    @abstractmethod
-    def evaluate(self, target: Any) -> Any:
-        pass
+__all__ = ["BaseGuardrail"]
