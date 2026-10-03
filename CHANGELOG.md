@@ -7,6 +7,7 @@
 - Added GitHub-renderable Mermaid diagrams and an accurate tools, guardrails, retry, and approval overview to the README
 
 ### Fixed
+- Fixed the approval endpoint saving each reviewer decision twice: `POST /api/v1/agent/approval` called `append_approval_turn` two times, so every approved or rejected action appeared as duplicate messages in the chat transcript. Added a regression test
 - Added a sign-out action to the reconnect-key screen that clears the session and in-memory chat state
 - Replaced the README with product-focused LedgerLens overview and setup documentation
 - Prevented demo users from sharing a server-side OpenAI key: request-scoped keys are held in tab memory and passed through LangGraph runtime context without persistence
