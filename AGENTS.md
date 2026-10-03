@@ -102,6 +102,8 @@ agent → verify         (plain text response)
 - `prompts.py` — `PromptRegistry.get_system_directive()` returns the financial detective system prompt.
 - `models.py` — Pydantic models for `BillingPlan`, `Invoice`, `CreditMemo`, `ActionDraft`.
 
+**Shared runtime** (`services/agent/shared/services/agent/`): a vendored copy of the agent runtime from master-project-template (see `shared/README.md` for the source commit). It provides the `ToolAgent` graph, the base/PII/security/loop guardrails, the exception hierarchy and the telemetry setup. Do not edit it here; change it in the template and copy it again. `app/guardrails/{base,pii,security,loop_guard}.py`, `app/exceptions.py` and `app/core/telemetry.py` are thin wrappers over it, and `FinancialDetective` configures a `ToolAgent` with this project's prompt, tools, approval policy and groundedness check.
+
 **Guardrails** (`app/guardrails/`):
 - `SecurityGuardrail`, `PIIGuardrail` — called at HTTP layer (before agent) on raw user input
 - `ApprovalPolicyGuardrail` — called inside `_agent_node`; detects if a tool call is in `WRITE_TOOLS` and sets `requires_approval = True`
