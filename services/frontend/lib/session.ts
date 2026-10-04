@@ -20,21 +20,16 @@ export type GithubConfig = {
   clientId: string;
   clientSecret: string;
   appUrl: string;
-  allowedUsers: string[];
 };
 
-/** GitHub SSO settings, or null when not (fully) configured. Fails closed without an allowlist. */
+/** GitHub SSO settings, or null when not configured. Any GitHub account may sign in. */
 export function githubConfig(): GithubConfig | null {
   const clientId = process.env.GITHUB_CLIENT_ID ?? "";
   const clientSecret = process.env.GITHUB_CLIENT_SECRET ?? "";
-  const allowedUsers = (process.env.GITHUB_ALLOWED_USERS ?? "")
-    .split(",")
-    .map((name) => name.trim().toLowerCase())
-    .filter(Boolean);
   const placeholder = (value: string) => !value || value.startsWith("replace-with-");
-  if (placeholder(clientId) || placeholder(clientSecret) || !allowedUsers.length) return null;
+  if (placeholder(clientId) || placeholder(clientSecret)) return null;
   const appUrl = (process.env.APP_URL ?? "http://localhost:3000").replace(/\/+$/, "");
-  return { clientId, clientSecret, appUrl, allowedUsers };
+  return { clientId, clientSecret, appUrl };
 }
 
 function signature(payload: string, secret: string): string {

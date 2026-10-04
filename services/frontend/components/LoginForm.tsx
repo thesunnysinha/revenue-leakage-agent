@@ -7,7 +7,6 @@ const ERRORS: Record<string, string> = {
   denied: "GitHub sign-in was cancelled.",
   state: "Sign-in session expired. Please try again.",
   github: "Could not complete sign-in with GitHub.",
-  forbidden: "Your GitHub account is not authorised to use this workspace.",
 };
 
 export default function LoginForm({ configured, error }: { configured: boolean; error?: string }) {

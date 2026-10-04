@@ -85,7 +85,7 @@ Generate a random `BACKEND_API_TOKEN` and set the same value in both env files. 
 python -c "import secrets; print(secrets.token_urlsafe(48))"
 ```
 
-Each visitor enters their own OpenAI API key on the login page. The app holds it in that browser tab's memory and sends it to the agent service for each model request; it is not saved in chat history or the database. Sign-in uses GitHub SSO: create a GitHub OAuth App with callback URL `http://localhost:3000/api/auth/github/callback`, then set `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`, and `GITHUB_ALLOWED_USERS` (comma-separated usernames) in `env/frontend/.env.local`.
+Each visitor enters their own OpenAI API key on the login page. The app holds it in that browser tab's memory and sends it to the agent service for each model request; it is not saved in chat history or the database. Sign-in uses GitHub SSO: create a GitHub OAuth App with callback URL `http://localhost:3000/api/auth/github/callback`, then set `GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET` (any GitHub account can sign in) in `env/frontend/.env.local`.
 
 Start the application:
 

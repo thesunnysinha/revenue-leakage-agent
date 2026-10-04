@@ -60,7 +60,6 @@ export async function GET(request: Request) {
 
   const login = await githubLogin(code, config).catch(() => null);
   if (!login) return fail("github");
-  if (!config.allowedUsers.includes(login.toLowerCase())) return fail("forbidden");
 
   const response = NextResponse.redirect(`${config.appUrl}/`);
   response.cookies.set(SESSION_COOKIE, sessionToken, sessionCookieOptions);
