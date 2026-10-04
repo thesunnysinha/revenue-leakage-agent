@@ -160,3 +160,6 @@
   .approvalOutcomes { grid-template-columns: 1fr; }
   .toolGroups>p { grid-template-columns: 1fr; gap: 4px; }
 }
+.githubButton { display: flex; min-height: 47px; align-items: center; justify-content: space-between; margin-top: 10px; padding: 0 16px; border: 1px solid #356e56; border-radius: 9px; color: #fff; background: #356e56; font: 650 13px var(--font-geist-sans),sans-serif; text-decoration: none; transition: background .15s,transform .15s; }
+.githubButton:hover { transform: translateY(-1px); background: #285b45; }
+.githubButton:focus-visible { outline: 2px solid #4c8b68; outline-offset: 3px; }

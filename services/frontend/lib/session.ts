@@ -14,15 +14,27 @@ function sessionSecret(): string | null {
     : null;
 }
 
-export function demoCredentials(): { username: string; password: string } | null {
-  const username = process.env.DEMO_USERNAME ?? (process.env.NODE_ENV === "development" ? "demo" : "");
-  const password = process.env.DEMO_PASSWORD ?? (process.env.NODE_ENV === "development" ? "ledgerlens-demo" : "");
-  if (process.env.NODE_ENV === "production" && (username === "demo" || password === "ledgerlens-demo" || username.startsWith("replace-with-") || password.startsWith("replace-with-"))) return null;
-  return username && password ? { username, password } : null;
-}
+export const OAUTH_STATE_COOKIE = "ledgerlens_oauth_state";
 
-export function displayedDemoCredentials(): { username: string; password: string } | null {
-  return process.env.NODE_ENV === "production" ? null : demoCredentials();
+export type GithubConfig = {
+  clientId: string;
+  clientSecret: string;
+  appUrl: string;
+  allowedUsers: string[];
+};
+
+/** GitHub SSO settings, or null when not (fully) configured. Fails closed without an allowlist. */
+export function githubConfig(): GithubConfig | null {
+  const clientId = process.env.GITHUB_CLIENT_ID ?? "";
+  const clientSecret = process.env.GITHUB_CLIENT_SECRET ?? "";
+  const allowedUsers = (process.env.GITHUB_ALLOWED_USERS ?? "")
+    .split(",")
+    .map((name) => name.trim().toLowerCase())
+    .filter(Boolean);
+  const placeholder = (value: string) => !value || value.startsWith("replace-with-");
+  if (placeholder(clientId) || placeholder(clientSecret) || !allowedUsers.length) return null;
+  const appUrl = (process.env.APP_URL ?? "http://localhost:3000").replace(/\/+$/, "");
+  return { clientId, clientSecret, appUrl, allowedUsers };
 }
 
 function signature(payload: string, secret: string): string {

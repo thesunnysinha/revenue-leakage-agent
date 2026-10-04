@@ -1,8 +1,9 @@
 import { redirect } from "next/navigation";
 import LoginForm from "@/components/LoginForm";
-import { displayedDemoCredentials, hasValidSession } from "@/lib/session";
+import { githubConfig, hasValidSession } from "@/lib/session";
 
-export default async function LoginPage() {
+export default async function LoginPage({ searchParams }: { searchParams: Promise<{ error?: string }> }) {
   if (await hasValidSession()) redirect("/");
-  return <LoginForm demoCredentials={displayedDemoCredentials()} />;
+  const { error } = await searchParams;
+  return <LoginForm configured={githubConfig() !== null} error={error} />;
 }
