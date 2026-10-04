@@ -3,6 +3,7 @@
 ## [Unreleased]
 
 ### Changed
+- Replaced the username/password login with GitHub SSO (OAuth web flow with a `state` check) open to any GitHub account; removed the demo credentials. Configure `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET` and `APP_URL` in `env/frontend/.env.local`
 - Adopted the shared agent runtime from master-project-template (vendored under `services/agent/shared/`): the security, PII and loop guardrails, the exception hierarchy, the logging/tracing setup and the agent graph (human-approval gate, loop guard, duplicate-call suppression, groundedness retry, checkpointing) now come from it. `FinancialDetective` keeps its prompt, tools, approval policy and groundedness check, and the HTTP API, error responses and stored data are unchanged. Added graph-level tests that pass identically against the previous implementation
 - Redesigned the login page with a clearer LedgerLens sign-in surface and a higher-contrast agent workflow diagram, including a distinct human-approval checkpoint and improved responsive typography
 - Added GitHub-renderable Mermaid diagrams and an accurate tools, guardrails, retry, and approval overview to the README
